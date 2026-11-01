@@ -1,0 +1,19 @@
+nav { display: flex; gap: .3rem; padding: .5rem 1rem; background: #fff; border-bottom: 1px solid var(--line); overflow-x: auto; position: sticky; top: 0; z-index: 5; }
+nav button { border: 0; background: transparent; white-space: nowrap; }
+nav button.active { background: var(--ink); color: #fff; }
+.rota td { padding: .25rem; min-width: 118px; }
+.rota td.name { min-width: 150px; font-weight: 600; }
+.rota input[type=time] { padding: .25rem; font-size: .85rem; }
+.rota .cell { display: grid; gap: 2px; }
+.rota .other { font-size: .75rem; color: var(--muted); }
+.toolbar { display: flex; flex-wrap: wrap; gap: .6rem; align-items: end; margin-bottom: 1rem; }
+.toolbar label { margin: 0; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .8rem; margin-bottom: 1rem; }
+.stat { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: .8rem 1rem; }
+.stat .v { font-size: 1.6rem; font-weight: 800; }
+.stat .k { font-size: .8rem; color: var(--muted); }
+td .actions { display: flex; gap: .3rem; flex-wrap: wrap; }
+td .actions button { padding: .25rem .55rem; font-size: .82rem; }
+main { max-width: 1400px; }
+.toolbar label input[type=number] { width: 90px; }
+@media print { header.bar, nav, .toolbar, button { display: none !important; } .card { border: 0; } }

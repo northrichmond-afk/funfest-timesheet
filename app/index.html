@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Fun Fest Timesheet</title>
+  <meta name="theme-color" content="#e8590c">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Fun Fest">
+  <link rel="stylesheet" href="../shared/styles.css">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header class="bar">
+    <span class="logo">Fun Fest Timesheet</span>
+    <button id="signout" class="hidden">Sign out</button>
+  </header>
+
+  <main id="view">
+    <p class="center muted">Loading…</p>
+  </main>
+
+  <dialog id="dlg"></dialog>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
