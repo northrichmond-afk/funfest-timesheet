@@ -1,5 +1,5 @@
 import { sb, configured, signInWithGoogle, signOut, registerLogin, rpc } from '../shared/supabase.js';
-import { calcEntry, fmtHours, localDate, localTime, decimalHours } from '../shared/hours.js';
+import { calcEntry, fmtHours, localDate, localTime, decimalHours, distanceM } from '../shared/hours.js';
 import { GOOGLE_ICON, esc, toast } from '../shared/ui.js';
 
 const view = document.getElementById('view');
@@ -68,7 +68,8 @@ function showConsent() {
       <h1>Hi ${esc(me.name.split(' ')[0])} 👋</h1>
       <h2>How we use your location</h2>
       <ul>
-        <li>Your location is checked <strong>only when you tap Start shift or End shift</strong>. We never track you in between or outside work.</li>
+        <li>Your location is recorded <strong>only when you tap Start shift or End shift</strong>. We never track you in between or outside work.</li>
+        <li>When you open the app, it also checks your location to show which venue you're at. That check stays on your phone and isn't saved or sent to us.</li>
         <li>It's used to confirm you're at the Fun Fest venue, so your hours are recorded accurately for pay.</li>
         <li>We store the time, your position and its accuracy at those two moments. Exact positions are deleted after about 3 months; your hours are kept for payroll records (6 years).</li>
         <li>Only Fun Fest admins can see your records. You can ask to see them at any time.</li>
@@ -117,7 +118,7 @@ async function renderToday() {
   const [{ data: planned }, { data: open }, { data: sites }] = await Promise.all([
     sb.from('planned_shifts').select('*, sites(name)').eq('staff_id', me.id).eq('shift_date', today).maybeSingle(),
     sb.from('time_entries').select('*, sites(name)').eq('staff_id', me.id).is('actual_end', null).maybeSingle(),
-    sb.from('sites').select('id,name').eq('active', true),
+    sb.from('sites').select('id,name,address,lat,lng,geofence_radius_m').eq('active', true),
   ]);
   const queued = getQueue();
   const pendingIn = queued.find(q => q.action === 'clock_in');
@@ -126,6 +127,7 @@ async function renderToday() {
   const startedAt = open ? open.actual_start : pendingIn?.p_client_time;
 
   pane.innerHTML = `
+    ${sites?.length ? `<div id="here" class="here card"><span class="muted">📍 Finding your location…</span></div>` : ''}
     <div class="card hero">
       <div class="muted">${new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
       ${planned
@@ -139,6 +141,8 @@ async function renderToday() {
       ${!sites?.length ? `<div class="msg warn small">No venues have been set up yet. Ask your manager.</div>` : ''}
       <div id="out"></div>
     </div>`;
+
+  if (sites?.length) showNearbyVenue(sites, planned);
 
   if (onShift) {
     const tick = () => {
@@ -275,11 +279,53 @@ function requestChange(entry) {
 
 // ── Location ────────────────────────────────────────────────
 
-function getPosition() {
+// Shows which venue the person is at (or how far the nearest one is).
+// Worked out on the phone only: this position is never sent to the server.
+async function showNearbyVenue(sites, planned) {
+  const box = document.getElementById('here');
+  if (!box) return;
+  let pos;
+  try {
+    pos = await getPosition({ maximumAge: 60000 });
+  } catch (e) {
+    if (box.isConnected) box.innerHTML = `<span class="muted small">📍 ${esc(locationErrorText(e))}</span>`;
+    return;
+  }
+  if (!box.isConnected) return; // user switched tabs meanwhile
+  const { latitude, longitude, accuracy } = pos.coords;
+  const ranked = sites
+    .map(s => ({ ...s, d: distanceM(latitude, longitude, s.lat, s.lng) }))
+    .sort((a, b) => a.d - b.d);
+  const near = ranked[0];
+  const at = near.d <= near.geofence_radius_m;
+  const fmtDist = m => m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`;
+  const wrongVenue = at && planned && planned.site_id !== near.id;
+
+  box.className = `here card ${at ? 'at' : 'away'}`;
+  box.innerHTML = at
+    ? `<div class="here-icon">📍</div>
+       <div><div class="small muted">You're at</div>
+         <div class="here-name">${esc(near.name)}</div>
+         ${near.address ? `<div class="small muted">${esc(near.address)}</div>` : ''}
+         ${wrongVenue ? `<div class="small" style="color:var(--warn)">Your planned shift today is at ${esc(planned.sites?.name || 'another venue')}.</div>` : ''}
+       </div>`
+    : `<div class="here-icon">🧭</div>
+       <div><div class="small muted">Not at a Fun Fest venue</div>
+         <div class="here-name">Nearest: ${esc(near.name)}</div>
+         <div class="small muted">About ${fmtDist(near.d)} away${accuracy > 100 ? ` · GPS accuracy ±${Math.round(accuracy)} m` : ''}</div>
+       </div>
+       <button class="small here-refresh" aria-label="Check location again">↻</button>`;
+  box.querySelector('.here-refresh')?.addEventListener('click', () => {
+    box.innerHTML = `<span class="muted">📍 Finding your location…</span>`;
+    showNearbyVenue(sites, planned);
+  });
+}
+
+function getPosition(opts = {}) {
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) return reject({ code: 'unsupported' });
     navigator.geolocation.getCurrentPosition(resolve, reject,
-      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0, ...opts });
   });
 }
 
