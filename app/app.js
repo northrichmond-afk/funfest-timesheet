@@ -1,6 +1,7 @@
-import { sb, configured, signInWithGoogle, signOut, registerLogin, rpc } from '../shared/supabase.js';
+import { sb, configured, signOut, registerLogin, rpc, isPasswordRecovery } from '../shared/supabase.js';
+import { renderLogin, renderNewPassword } from '../shared/login.js';
 import { calcEntry, fmtHours, localDate, localTime, decimalHours, distanceM } from '../shared/hours.js';
-import { GOOGLE_ICON, esc, toast } from '../shared/ui.js';
+import { esc, toast } from '../shared/ui.js';
 
 const view = document.getElementById('view');
 const dlg = document.getElementById('dlg');
@@ -22,6 +23,7 @@ async function boot() {
     return;
   }
   const { data: { session } } = await sb.auth.getSession();
+  if (session && isPasswordRecovery) return renderNewPassword(view, () => location.replace(location.pathname));
   if (!session) return showLogin();
 
   try {
@@ -41,22 +43,19 @@ async function boot() {
 }
 
 function showLogin() {
-  view.innerHTML = `
-    <div class="card hero stack">
-      <h1>Welcome to Fun Fest</h1>
-      <p class="muted">Sign in with the Google account your manager registered for you.</p>
-      <button class="google-btn" id="g">${GOOGLE_ICON} Sign in with Google</button>
-    </div>
-    ${installHint()}`;
-  document.getElementById('g').onclick = () => signInWithGoogle();
+  renderLogin(view, {
+    title: 'Welcome to Fun Fest',
+    intro: 'Sign in with the Google account or email address your manager registered for you.',
+    footer: installHint(),
+  });
 }
 
 function showNotRegistered(email) {
   view.innerHTML = `
     <div class="card stack">
       <h1>You're not registered with Fun Fest</h1>
-      <p>You signed in as <strong>${esc(email)}</strong>, but this Google account isn't on the staff list.</p>
-      <p class="muted">Ask your manager to add this email, or sign out and choose a different Google account.</p>
+      <p>You signed in as <strong>${esc(email)}</strong>, but this email isn't on the staff list.</p>
+      <p class="muted">Ask your manager to add this email, or sign out and use a different account.</p>
       <button class="primary" id="so">Sign out</button>
     </div>`;
   document.getElementById('so').onclick = signOut;

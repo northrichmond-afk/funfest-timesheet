@@ -45,6 +45,15 @@ No build step: it's plain HTML and JavaScript.
    - Site URL: `https://northrichmond-afk.github.io/funfest-timesheet/app/`
    - Redirect URLs: add `https://northrichmond-afk.github.io/funfest-timesheet/**`
 
+### 2b. Email + password sign-in (for staff without a Google account)
+1. In Supabase SQL Editor, run `supabase/002_password_login.sql`. Fresh installs get this from `schema.sql` already.
+2. **Authentication → Hooks → Add hook → Before User Created**: choose **Postgres**, schema `public`, function `hook_before_user_created`, then save. This stops anyone not on the staff list creating a login.
+3. **Authentication → Sign In / Providers → Email**: make sure it's enabled, with **Confirm email** on. Set the minimum password length to **8**.
+4. **Emails need your own mail server.** Supabase's built-in email only delivers to members of your Supabase team, so staff won't receive confirmation or reset emails until you set up SMTP: **Authentication → Emails → SMTP Settings**. Options:
+   - Google Workspace: host `smtp.gmail.com`, port `465`, user northrichmond@funfestholidayclub.co.uk, password = a Google **app password** (needs 2-Step Verification).
+   - Or a free transactional email service such as Resend or Brevo.
+5. Optional: edit the email wording under **Authentication → Emails → Templates** (Confirm signup, Reset password).
+
 ### 3. GitHub Pages
 1. Push this code to `northrichmond-afk/funfest-timesheet` (branch `main`).
 2. In the repo, go to **Settings → Pages → Build and deployment → Source: GitHub Actions**.
@@ -61,7 +70,7 @@ No build step: it's plain HTML and JavaScript.
 
 ## How it works
 
-- **Login:** Google sign-in. Only emails added on the Staff page can get in; anyone else sees "You're not registered". Marking someone as *Left* blocks them immediately.
+- **Login:** Google sign-in, or email + password (with *Create one* and *Forgot password?*). Only emails added on the Staff page can create a login or get in; anyone else is refused. Marking someone as *Left* blocks them immediately. Someone who used Google can also add a password via *Forgot password?*.
 - **Start shift:** the phone sends its GPS position. The database finds the nearest venue and only accepts the start if they're within its radius.
 - **End shift:** always accepted, but if they're outside the radius (or the end was submitted late because there was no signal) the entry is **flagged** for review.
 - **Offline:** if there's no signal, the tap is saved on the phone with its real time and sent automatically later. Entries more than 5 minutes late are flagged.

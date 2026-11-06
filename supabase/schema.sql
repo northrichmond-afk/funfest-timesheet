@@ -393,3 +393,28 @@ create trigger planned_shifts_lock before insert or update or delete on planned_
 insert into staff (name, email, role, status)
 values ('North Richmond Admin', 'northrichmond@funfestholidayclub.co.uk', 'admin', 'active')
 on conflict ((lower(email))) do update set role = 'admin';
+
+-- ─────────────────────────────────────────────────────────────
+-- Email + password sign-in (see 002_password_login.sql)
+-- ─────────────────────────────────────────────────────────────
+create or replace function public.hook_before_user_created(event jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare em text := lower(coalesce(event -> 'user' ->> 'email', ''));
+begin
+  if em <> '' and exists (select 1 from staff where lower(email) = em and status <> 'left') then
+    return '{}'::jsonb;
+  end if;
+  return jsonb_build_object('error', jsonb_build_object(
+    'http_code', 403,
+    'message', 'This email is not on the Fun Fest staff list. Ask your manager to add it.'));
+end $$;
+
+revoke execute on function public.hook_before_user_created(jsonb) from public;
+do $$ begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    revoke execute on function public.hook_before_user_created(jsonb) from anon, authenticated;
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'supabase_auth_admin') then
+    grant execute on function public.hook_before_user_created(jsonb) to supabase_auth_admin;
+  end if;
+end $$;

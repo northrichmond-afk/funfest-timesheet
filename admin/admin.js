@@ -1,6 +1,7 @@
-import { sb, configured, signInWithGoogle, signOut, registerLogin, rpc } from '../shared/supabase.js';
+import { sb, configured, signOut, registerLogin, rpc, isPasswordRecovery } from '../shared/supabase.js';
+import { renderLogin, renderNewPassword } from '../shared/login.js';
 import { calcEntry, fmtHours, decimalHours, localDate, localTime, londonDateTime, toCSV } from '../shared/hours.js';
-import { GOOGLE_ICON, esc, toast, download } from '../shared/ui.js';
+import { esc, toast, download } from '../shared/ui.js';
 import { staffMatches } from '../shared/search.js';
 
 const view = document.getElementById('view');
@@ -45,14 +46,9 @@ async function boot() {
     return;
   }
   const { data: { session } } = await sb.auth.getSession();
+  if (session && isPasswordRecovery) return renderNewPassword(view, () => location.replace(location.pathname));
   if (!session) {
-    view.innerHTML = `
-      <div class="card center stack" style="max-width:420px;margin:3rem auto">
-        <h1>Admin sign in</h1>
-        <p class="muted">Use the Fun Fest admin Google account.</p>
-        <button class="google-btn" id="g">${GOOGLE_ICON} Sign in with Google</button>
-      </div>`;
-    document.getElementById('g').onclick = signInWithGoogle;
+    renderLogin(view, { title: 'Admin sign in', intro: 'Use your Fun Fest admin account.' });
     return;
   }
   document.getElementById('signout').classList.remove('hidden');
@@ -163,7 +159,7 @@ async function tabToday() {
     results.innerHTML = `
       <p class="small muted">Found ${found.length} of ${state.staff.length} staff</p>
       ${found.length ? `<div class="table-wrap"><table>
-        <tr><th>Name</th><th>Google email</th><th>Phone</th><th>Venue</th><th>Status</th><th>Today</th><th></th></tr>
+        <tr><th>Name</th><th>Login email</th><th>Phone</th><th>Venue</th><th>Status</th><th>Today</th><th></th></tr>
         ${found.map(s => `<tr>
           <td><strong>${esc(s.name)}</strong>${s.role === 'admin' ? ' <span class="pill info">Admin</span>' : ''}</td>
           <td class="small">${esc(s.email)}</td>
@@ -609,10 +605,10 @@ async function tabStaff() {
   view.innerHTML = `
     <div class="card">
       <h2>Add staff</h2>
-      <p class="muted small">Use the person's <strong>Google account email</strong>. Only emails on this list can sign in.</p>
+      <p class="muted small">Use the email the person will sign in with: their <strong>Google account</strong>, or any email if they'll use a password. Only emails on this list can sign in.</p>
       <form id="add" class="row">
         <label>Name<input name="name" required></label>
-        <label>Google email<input name="email" type="email" required></label>
+        <label>Login email<input name="email" type="email" required></label>
         <label>Phone<input name="phone"></label>
         <label>Default venue<select name="default_site_id"><option value="">—</option>${siteOptions(null)}</select></label>
         <label>Hourly rate £<input name="hourly_rate" type="number" step="0.01" min="0"></label>
@@ -628,7 +624,7 @@ async function tabStaff() {
     <div class="card">
       <h2>Staff (${state.staff.filter(s => s.status !== 'left').length} current)</h2>
       <div class="table-wrap"><table id="staffTable">
-        <tr><th>Name</th><th>Google email</th><th>Phone</th><th>Role</th><th>Venue</th><th class="num">Rate</th><th>Status</th><th>Location consent</th><th>Last sign-in</th><th></th></tr>
+        <tr><th>Name</th><th>Login email</th><th>Phone</th><th>Role</th><th>Venue</th><th class="num">Rate</th><th>Status</th><th>Location consent</th><th>Last sign-in</th><th></th></tr>
         ${state.staff.map(s => `<tr data-id="${s.id}">
           <td>${esc(s.name)}</td><td class="small">${esc(s.email)}</td><td class="small">${esc(s.phone || '')}</td>
           <td>${s.role === 'admin' ? '<span class="pill info">Admin</span>' : 'Staff'}</td>
@@ -672,7 +668,9 @@ function inviteText(s) {
 You've been added to the Fun Fest Timesheet app, which we use to record your shift times.
 
 1. On your phone, open: ${APP_URL}
-2. Tap "Sign in with Google" and choose ${s.email}
+2. Sign in, either:
+   • Tap "Sign in with Google" and choose ${s.email}, or
+   • No Google account? Tap "Create one" under the password box, enter ${s.email} and choose a password, then tap the link in the confirmation email we send you
 3. Read the location notice and tap Continue (allow location when asked)
 4. Add the app to your home screen (instructions are on the page)
 
@@ -707,8 +705,8 @@ function editStaff(s, after = tabStaff) {
     <form method="dialog" class="stack">
       <h2>Edit ${esc(s.name)}</h2>
       <label>Name<input name="name" value="${esc(s.name)}" required></label>
-      <label>Google email<input name="email" type="email" value="${esc(s.email)}" required></label>
-      <p class="small muted">Changing the email unlinks their current Google login; they'll sign in again with the new one.</p>
+      <label>Login email<input name="email" type="email" value="${esc(s.email)}" required></label>
+      <p class="small muted">Changing the email unlinks their current login; they'll sign in again with the new email.</p>
       <div class="row">
         <label>Phone<input name="phone" value="${esc(s.phone || '')}"></label>
         <label>Hourly rate £<input name="hourly_rate" type="number" step="0.01" value="${s.hourly_rate ?? ''}"></label>

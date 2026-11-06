@@ -3,6 +3,10 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
 export const configured = !SUPABASE_URL.includes('YOUR-PROJECT-REF');
 
+// Captured before the client reads (and clears) the URL: true when the page was
+// opened from a "reset your password" email link.
+export const isPasswordRecovery = /type=recovery/.test(location.hash + location.search);
+
 export const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
 });
