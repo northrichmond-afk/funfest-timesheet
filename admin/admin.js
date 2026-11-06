@@ -1,6 +1,7 @@
 import { sb, configured, signInWithGoogle, signOut, registerLogin, rpc } from '../shared/supabase.js';
 import { calcEntry, fmtHours, decimalHours, localDate, localTime, londonDateTime, toCSV } from '../shared/hours.js';
 import { GOOGLE_ICON, esc, toast, download } from '../shared/ui.js';
+import { staffMatches } from '../shared/search.js';
 
 const view = document.getElementById('view');
 const dlg = document.getElementById('dlg');
@@ -539,6 +540,21 @@ async function tabReports() {
 
 // ── Staff & onboarding ───────────────────────────────────────
 
+// Search text and status filter for the Staff page (kept when the page re-renders)
+const staffSearch = { q: '', status: 'current' };
+
+function applyStaffSearch() {
+  let shown = 0;
+  for (const tr of view.querySelectorAll('#staffTable tr[data-id]')) {
+    const s = state.staff.find(x => x.id === tr.dataset.id);
+    const ok = staffMatches(s, staffSearch.q, staffSearch.status, s.default_site_id ? siteName(s.default_site_id) : '');
+    tr.classList.toggle('hidden', !ok);
+    if (ok) shown++;
+  }
+  document.getElementById('qNone').classList.toggle('hidden', shown > 0);
+  document.getElementById('qCount').textContent = `Showing ${shown} of ${state.staff.length} staff`;
+}
+
 async function tabStaff() {
   await loadRef();
   const pill = s => s.status === 'active' ? '<span class="pill ok">Active</span>' : s.status === 'invited' ? '<span class="pill warn">Invited</span>' : '<span class="pill bad">Left</span>';
@@ -563,17 +579,30 @@ async function tabStaff() {
     </div>
     <div class="card">
       <h2>Staff (${state.staff.filter(s => s.status !== 'left').length} current)</h2>
-      <div class="table-wrap"><table>
-        <tr><th>Name</th><th>Google email</th><th>Role</th><th>Venue</th><th class="num">Rate</th><th>Status</th><th>Location consent</th><th>Last sign-in</th><th></th></tr>
-        ${state.staff.map(s => `<tr>
-          <td>${esc(s.name)}</td><td class="small">${esc(s.email)}</td><td>${s.role === 'admin' ? '<span class="pill info">Admin</span>' : 'Staff'}</td>
-          <td>${esc(s.default_site_id ? siteName(s.default_site_id) : '')}</td><td class="num">${s.hourly_rate ? '£' + s.hourly_rate : ''}</td>
+      <form id="search" class="toolbar" role="search">
+        <label style="flex:1 1 260px">Search staff
+          <input id="q" type="search" placeholder="Name, email, phone or venue" value="${esc(staffSearch.q)}" autocomplete="off"></label>
+        <label>Status<select id="qs">
+          ${[['current', 'Current (not left)'], ['', 'All'], ['active', 'Active'], ['invited', 'Invited'], ['left', 'Left'], ['admin', 'Admins']]
+            .map(([v, l]) => `<option value="${v}" ${staffSearch.status === v ? 'selected' : ''}>${l}</option>`).join('')}
+        </select></label>
+        <button class="primary">🔍 Search</button>
+        <button type="button" id="qClear">Clear</button>
+      </form>
+      <p id="qCount" class="small muted"></p>
+      <div class="table-wrap"><table id="staffTable">
+        <tr><th>Name</th><th>Google email</th><th>Phone</th><th>Role</th><th>Venue</th><th class="num">Rate</th><th>Status</th><th>Location consent</th><th>Last sign-in</th><th></th></tr>
+        ${state.staff.map(s => `<tr data-id="${s.id}">
+          <td>${esc(s.name)}</td><td class="small">${esc(s.email)}</td><td class="small">${esc(s.phone || '')}</td>
+          <td>${s.role === 'admin' ? '<span class="pill info">Admin</span>' : 'Staff'}</td>
+          <td>${esc(s.default_site_id ? siteName(s.default_site_id) : '')}</td><td class="num">${s.hourly_rate ? '£' + Number(s.hourly_rate).toFixed(2) : ''}</td>
           <td>${pill(s)}</td><td class="small">${s.consent_location_at ? '✓ ' + localDate(s.consent_location_at) : '—'}</td>
           <td class="small">${s.last_login_at ? dayLabel(localDate(s.last_login_at)) : 'Never'}</td>
           <td><div class="actions">
             ${s.status !== 'left' ? `<button data-inv="${s.id}">Invite</button>` : ''}
             <button data-ed="${s.id}">Edit</button>
           </div></td></tr>`).join('')}
+        <tr id="qNone" class="hidden"><td colspan="10" class="muted">No staff match your search.</td></tr>
       </table></div>
     </div>`;
 
@@ -598,6 +627,14 @@ async function tabStaff() {
   };
   view.querySelectorAll('[data-inv]').forEach(b => b.onclick = () => invite(state.staff.find(s => s.id === b.dataset.inv)));
   view.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => editStaff(state.staff.find(s => s.id === b.dataset.ed)));
+
+  const q = document.getElementById('q'), qs = document.getElementById('qs');
+  const run = () => { staffSearch.q = q.value; staffSearch.status = qs.value; applyStaffSearch(); };
+  document.getElementById('search').onsubmit = (ev) => { ev.preventDefault(); run(); };
+  q.oninput = run;        // results update as you type; the Search button / Enter also work
+  qs.onchange = run;
+  document.getElementById('qClear').onclick = () => { q.value = ''; qs.value = 'current'; run(); q.focus(); };
+  applyStaffSearch();
 }
 
 function inviteText(s) {

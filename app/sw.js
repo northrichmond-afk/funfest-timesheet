@@ -1,8 +1,8 @@
 // Caches the app shell so it opens without signal. Never caches Supabase API calls.
-const CACHE = 'ff-shell-v2';
+const CACHE = 'ff-shell-v3';
 const SHELL = [
   './', './index.html', './app.js', './app.css', './manifest.webmanifest', './icon.svg', './icon-192.png',
-  '../shared/styles.css', '../shared/config.js', '../shared/supabase.js', '../shared/hours.js', '../shared/ui.js',
+  '../shared/styles.css', '../shared/config.js', '../shared/supabase.js', '../shared/hours.js', '../shared/ui.js', '../shared/search.js',
 ];
 
 self.addEventListener('install', e => {
