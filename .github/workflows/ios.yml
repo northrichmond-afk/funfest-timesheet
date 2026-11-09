@@ -7,6 +7,10 @@ on:
   push:
     tags: ['ios-v*']
 
+defaults:
+  run:
+    shell: bash   # adds 'set -o pipefail' so a failed xcodebuild isn't hidden by '| tail'
+
 jobs:
   build:
     runs-on: macos-latest
