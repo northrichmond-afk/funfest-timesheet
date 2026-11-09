@@ -7,6 +7,8 @@ import { staffMatches } from '../shared/search.js';
 const view = document.getElementById('view');
 const dlg = document.getElementById('dlg');
 const APP_URL = new URL('../app/', location.href).href;
+// Short link used in staff invites (bit.ly → the staff app)
+const INVITE_URL = 'https://bit.ly/4iONb9h';
 
 const state = { me: null, staff: [], sites: [], settings: {}, tab: 'today' };
 // Staff search on the Today page (kept when the page re-renders)
@@ -668,7 +670,7 @@ function inviteText(s) {
 
 You've been added to the Fun Fest Timesheet app, which we use to record your shift times.
 
-1. On your phone, open: ${APP_URL}
+1. On your phone, open: ${INVITE_URL}
 2. Sign in, either:
    • Tap "Sign in with Google" and choose ${s.email}, or
    • No Google account? Tap "Create one" under the password box, enter ${s.email} and choose a password, then tap the link in the confirmation email we send you
@@ -824,7 +826,7 @@ async function tabSettings() {
         : '<p class="muted">None. Lock periods from the Reports tab after payroll.</p>'}
     </div>
     <div class="card small muted">
-      Staff app link to share: <a href="${APP_URL}">${APP_URL}</a>
+      Staff app link to share: <a href="${INVITE_URL}">${INVITE_URL}</a> <span class="muted">(goes to ${APP_URL})</span>
     </div>`;
   document.getElementById('f').onsubmit = async (ev) => {
     ev.preventDefault();

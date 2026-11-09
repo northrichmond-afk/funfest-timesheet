@@ -2,7 +2,7 @@
 
 Staff clock in and out on their phones. The app checks they're at the venue using GPS. Admins plan shifts, correct times, and download hours for payroll.
 
-- **Staff app:** https://northrichmond-afk.github.io/funfest-timesheet/app/
+- **Staff app:** https://northrichmond-afk.github.io/funfest-timesheet/app/ (short link for staff: https://bit.ly/4iONb9h, used in invites)
 - **Admin:** https://northrichmond-afk.github.io/funfest-timesheet/admin/ (sign in as northrichmond@funfestholidayclub.co.uk)
 
 ## What's in here
