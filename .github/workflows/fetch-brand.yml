@@ -1,0 +1,29 @@
+name: Fetch Fun Fest brand assets (one-off)
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download logo, icon and page styles
+        run: |
+          set -e
+          mkdir -p resources/brand
+          cd resources/brand
+          UA="Mozilla/5.0 (FunFestTimesheet brand fetch)"
+          curl -fsSL -A "$UA" -o fun-fest-logo.png https://fun-fest.co.uk/wp-content/themes/ff-theme/assets/logos/fun-fest-logo.png
+          curl -fsSL -A "$UA" -o favicon-270.png https://fun-fest.co.uk/northrichmond/wp-content/uploads/2021/01/cropped-cropped-funfest-logo-favicon-2-5-270x270.png
+          curl -fsSL -A "$UA" -o page.html https://fun-fest.co.uk/northrichmond/
+          # stylesheets referenced by the page (theme CSS only)
+          grep -oE 'href="[^"]+ff-theme[^"]+\.css[^"]*"' page.html | sed 's/href="//;s/"$//' | sed 's/&#038;/\&/g' | head -5 > css-urls.txt || true
+          i=0; while read -r u; do i=$((i+1)); curl -fsSL -A "$UA" -o "theme-$i.css" "$u" || true; done < css-urls.txt
+          ls -la
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add resources/brand
+          git commit -m "Add Fun Fest brand assets from fun-fest.co.uk/northrichmond" || echo "nothing to commit"
+          git push
