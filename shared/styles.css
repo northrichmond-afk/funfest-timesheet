@@ -1,10 +1,24 @@
+@font-face { font-family: 'Gochi Hand'; font-weight: 400; font-display: swap; src: url(fonts/gochi-hand-latin-400-normal.woff2) format('woff2'); }
+@font-face { font-family: 'Open Sans'; font-weight: 400; font-display: swap; src: url(fonts/open-sans-latin-400-normal.woff2) format('woff2'); }
+@font-face { font-family: 'Open Sans'; font-weight: 600; font-display: swap; src: url(fonts/open-sans-latin-600-normal.woff2) format('woff2'); }
+@font-face { font-family: 'Open Sans'; font-weight: 700; font-display: swap; src: url(fonts/open-sans-latin-700-normal.woff2) format('woff2'); }
+@font-face { font-family: 'Catamaran'; font-weight: 600; font-display: swap; src: url(fonts/catamaran-latin-600-normal.woff2) format('woff2'); }
+@font-face { font-family: 'Catamaran'; font-weight: 800; font-display: swap; src: url(fonts/catamaran-latin-800-normal.woff2) format('woff2'); }
+
+/* Fun Fest brand (from fun-fest.co.uk): logo colours + Gochi Hand / Open Sans / Catamaran */
 :root {
-  --brand: #e8590c;
-  --brand-dark: #c2410c;
-  --ink: #1f2933;
-  --muted: #6b7280;
-  --line: #e5e7eb;
-  --bg: #fffaf5;
+  --purple: #7d4c9e;
+  --purple-dark: #643a82;
+  --pink: #ed008c;
+  --turquoise: #57c4c7;
+  --green: #8ec33f;
+  --yellow: #eae950;
+  --brand: var(--purple);
+  --brand-dark: var(--purple-dark);
+  --ink: #2c2c2c;
+  --muted: #6b6870;
+  --line: #e7e3ec;
+  --bg: #faf8fc;
   --card: #ffffff;
   --ok: #15803d;
   --ok-bg: #dcfce7;
@@ -13,26 +27,36 @@
   --bad: #b91c1c;
   --bad-bg: #fee2e2;
   --radius: 14px;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-head: 'Gochi Hand', 'Comic Sans MS', cursive;
+  --font-nav: 'Catamaran', system-ui, sans-serif;
+  font-family: 'Open Sans', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color: var(--ink);
   background: var(--bg);
 }
 * { box-sizing: border-box; }
 body { margin: 0; min-height: 100vh; }
-h1, h2, h3 { margin: 0 0 .5rem; line-height: 1.2; }
-h1 { font-size: 1.4rem; }
-h2 { font-size: 1.15rem; }
-a { color: var(--brand-dark); }
+h1, h2, h3 { margin: 0 0 .5rem; line-height: 1.15; }
+h1, h2 { font-family: var(--font-head); font-weight: 400; letter-spacing: .01em; }
+h1 { font-size: 2rem; color: var(--purple); }
+h2 { font-size: 1.55rem; color: var(--ink); }
+h3 { font-size: 1.05rem; }
+a { color: var(--purple); }
 .muted { color: var(--muted); }
 .small { font-size: .85rem; }
 .hidden { display: none !important; }
 
-header.bar {
-  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-  padding: .8rem 1rem; background: var(--brand); color: #fff;
-}
-header.bar .logo { font-weight: 800; letter-spacing: .02em; }
-header.bar button { background: rgba(255,255,255,.18); color: #fff; border: 0; }
+/* Header, styled like fun-fest.co.uk: white logo bar + purple strip */
+.site-header { background: #fff; }
+.brandbar { display: flex; align-items: center; gap: .9rem; padding: .55rem 1rem; max-width: 1400px; margin: 0 auto; }
+.brandbar a { display: inline-flex; }
+.brandbar img { height: 52px; width: auto; display: block; }
+.brand-sub { font-family: var(--font-head); font-size: 1.6rem; color: var(--pink); line-height: 1; }
+.topbar { background: var(--purple); color: #fff; font-family: var(--font-nav); font-weight: 600; }
+.topbar-inner { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .4rem 1rem; max-width: 1400px; margin: 0 auto; min-height: 2.6rem; }
+.topbar-title { letter-spacing: .02em; }
+.topbar button { background: rgba(255,255,255,.16); color: #fff; border: 0; font-family: var(--font-nav); font-weight: 600; padding: .3rem .8rem; }
+.topbar button:hover { background: rgba(255,255,255,.28); }
+.stripe { height: 4px; background: linear-gradient(90deg, var(--pink) 0 25%, var(--turquoise) 25% 50%, var(--yellow) 50% 75%, var(--green) 75% 100%); }
 
 main { max-width: 1100px; margin: 0 auto; padding: 1rem; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem; margin-bottom: 1rem; }

@@ -4,15 +4,16 @@ main { max-width: 520px; }
   display: block; width: 220px; height: 220px; margin: 1.2rem auto; border-radius: 50%;
   font-size: 1.35rem; font-weight: 800; border: 0; color: #fff; box-shadow: 0 10px 30px rgba(0,0,0,.15);
 }
-.clock-btn.start { background: var(--ok); }
-.clock-btn.end { background: var(--bad); }
+.clock-btn.start { background: var(--green); color: var(--ink); }
+.clock-btn.end { background: var(--pink); }
 .clock-btn:active { transform: scale(.97); }
 .elapsed { font-size: 2rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 .shift-line { display: flex; justify-content: space-between; padding: .45rem 0; border-bottom: 1px solid var(--line); }
 .shift-line:last-child { border-bottom: 0; }
 .tabs { display: flex; gap: .5rem; margin-bottom: 1rem; }
 .tabs button { flex: 1; }
-.tabs button.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+.tabs button { font-family: var(--font-nav); font-weight: 600; }
+.tabs button.active { background: var(--purple); color: #fff; border-color: var(--purple); }
 .install ol { padding-left: 1.2rem; margin: .4rem 0 0; }
 .here { display: flex; align-items: center; gap: .8rem; padding: .8rem 1rem; }
 .here.at { background: var(--ok-bg); border-color: #86efac; }
@@ -20,3 +21,6 @@ main { max-width: 520px; }
 .here-icon { font-size: 1.6rem; }
 .here-name { font-weight: 700; font-size: 1.1rem; }
 .here-refresh { margin-left: auto; padding: .3rem .6rem; }
+
+.brandbar { justify-content: center; }
+.login h1 { color: var(--purple); }

@@ -5,14 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Fun Fest Timesheet: Admin</title>
   <meta name="robots" content="noindex">
-  <link rel="icon" href="../app/icon.svg" type="image/svg+xml">
+  <link rel="icon" href="../shared/brand/favicon.png" type="image/png">
   <link rel="stylesheet" href="../shared/styles.css">
   <link rel="stylesheet" href="admin.css">
 </head>
 <body>
-  <header class="bar">
-    <span class="logo">Fun Fest Timesheet · Admin</span>
-    <span><span id="who" class="small"></span> <button id="signout" class="hidden">Sign out</button></span>
+  <header class="site-header">
+    <div class="brandbar">
+      <a href="./"><img src="../shared/brand/fun-fest-logo.png" alt="Fun Fest" width="71" height="52"></a>
+      <span class="brand-sub">North Richmond</span>
+    </div>
+    <div class="topbar"><div class="topbar-inner">
+      <span class="topbar-title">Timesheet Admin</span>
+      <span><span id="who" class="small" style="margin-right:.6rem;opacity:.9"></span><button id="signout" class="hidden">Sign out</button></span>
+    </div></div>
+    <div class="stripe"></div>
   </header>
   <nav id="nav" class="hidden">
     <button data-tab="today">Today</button>

@@ -4,19 +4,26 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Fun Fest Timesheet</title>
-  <meta name="theme-color" content="#e8590c">
+  <meta name="theme-color" content="#7d4c9e">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="icon" href="../shared/brand/favicon.png" type="image/png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Fun Fest">
   <link rel="stylesheet" href="../shared/styles.css">
   <link rel="stylesheet" href="app.css">
 </head>
 <body>
-  <header class="bar">
-    <span class="logo">Fun Fest Timesheet</span>
-    <button id="signout" class="hidden">Sign out</button>
+  <header class="site-header">
+    <div class="brandbar">
+      <a href="./"><img src="../shared/brand/fun-fest-logo.png" alt="Fun Fest" width="71" height="52"></a>
+      <span class="brand-sub">North Richmond</span>
+    </div>
+    <div class="topbar"><div class="topbar-inner">
+      <span class="topbar-title">Staff Timesheet</span>
+      <span><button id="signout" class="hidden">Sign out</button></span>
+    </div></div>
+    <div class="stripe"></div>
   </header>
 
   <main id="view">

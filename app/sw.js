@@ -1,8 +1,11 @@
 // Caches the app shell so it opens without signal. Never caches Supabase API calls.
-const CACHE = 'ff-shell-v5';
+const CACHE = 'ff-shell-v6';
 const SHELL = [
-  './', './index.html', './app.js', './app.css', './manifest.webmanifest', './icon.svg', './icon-192.png',
-  '../shared/styles.css', '../shared/config.js', '../shared/supabase.js', '../shared/hours.js', '../shared/ui.js', '../shared/search.js', '../shared/login.js', '../shared/native.js',
+  './', './index.html', './app.js', './app.css', './manifest.webmanifest', './icon-192.png', './apple-touch-icon.png',
+  '../shared/styles.css', '../shared/config.js', '../shared/supabase.js', '../shared/hours.js', '../shared/ui.js', '../shared/search.js', '../shared/login.js', '../shared/native.js', '../shared/brand/fun-fest-logo.png', '../shared/brand/favicon.png',
+  '../shared/fonts/gochi-hand-latin-400-normal.woff2', '../shared/fonts/open-sans-latin-400-normal.woff2',
+  '../shared/fonts/open-sans-latin-600-normal.woff2', '../shared/fonts/open-sans-latin-700-normal.woff2',
+  '../shared/fonts/catamaran-latin-600-normal.woff2', '../shared/fonts/catamaran-latin-800-normal.woff2',
 ];
 
 self.addEventListener('install', e => {
