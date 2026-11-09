@@ -15,8 +15,10 @@ Staff clock in and out on their phones. The app checks they're at the venue usin
 | `supabase/schema.sql` | Database tables, security rules and functions, with the first admin seeded |
 | `.github/workflows/pages.yml` | Runs tests and publishes the site to GitHub Pages on every push to `main` |
 | `tests/` | Unit tests for the hours calculation (`npm test`) |
+| `ios/` | iPhone app (Capacitor wrapper of `app/`). See **[IOS.md](IOS.md)** for setup and TestFlight |
+| `.github/workflows/ios.yml` | Builds the iPhone app on GitHub's Macs and uploads to TestFlight |
 
-No build step: it's plain HTML and JavaScript.
+No build step for the website: it's plain HTML and JavaScript. The iPhone app packages the same files (see IOS.md).
 
 ---
 

@@ -1,10 +1,10 @@
 // Sign-in screen shared by the staff app and admin pages:
 // Google, or email + password (create password, forgot password, set new password).
 import { sb, signInWithGoogle } from './supabase.js';
+import { authRedirect } from './native.js';
 import { GOOGLE_ICON, esc } from './ui.js';
 
 const MIN_PASSWORD = 8;
-const here = () => location.origin + location.pathname;
 
 /**
  * Renders the sign-in card into `el`.
@@ -55,10 +55,10 @@ export function renderLogin(el, opts = {}, mode = 'signin', notice = '') {
     </div>
     ${footer}`;
 
-  el.querySelector('#g')?.addEventListener('click', () => signInWithGoogle());
+  const msg = (cls, text) => { el.querySelector('#loginMsg').innerHTML = `<div class="msg ${cls}">${text}</div>`; };
+  el.querySelector('#g')?.addEventListener('click', () => signInWithGoogle().catch(e => msg('bad', esc(friendlyAuthError(e)))));
   el.querySelectorAll('[data-go]').forEach(a => a.onclick = (e) => { e.preventDefault(); again(a.dataset.go); });
 
-  const msg = (cls, text) => { el.querySelector('#loginMsg').innerHTML = `<div class="msg ${cls}">${text}</div>`; };
   el.querySelector('#pw').onsubmit = async (ev) => {
     ev.preventDefault();
     const f = Object.fromEntries(new FormData(ev.target));
@@ -74,7 +74,7 @@ export function renderLogin(el, opts = {}, mode = 'signin', notice = '') {
       }
       if (mode === 'signup') {
         if (f.password !== f.password2) { msg('bad', "The passwords don't match."); btn.disabled = false; return; }
-        const { data, error } = await sb.auth.signUp({ email, password: f.password, options: { emailRedirectTo: here() } });
+        const { data, error } = await sb.auth.signUp({ email, password: f.password, options: { emailRedirectTo: authRedirect() } });
         if (error) throw error;
         if (data.session) { location.reload(); return; } // email confirmation switched off
         if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
@@ -86,7 +86,7 @@ export function renderLogin(el, opts = {}, mode = 'signin', notice = '') {
         return;
       }
       if (mode === 'forgot') {
-        const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: here() });
+        const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: authRedirect() });
         if (error) throw error;
         again('signin', `<div class="msg ok">If <strong>${esc(email)}</strong> has a password set up, we've emailed a link to reset it. Check your inbox (and spam).</div>`);
         return;
@@ -118,6 +118,7 @@ export function renderNewPassword(el, onDone) {
     const { error } = await sb.auth.updateUser({ password: f.password });
     if (error) { out.innerHTML = `<div class="msg bad">${esc(friendlyAuthError(error))}</div>`; return; }
     history.replaceState(null, '', location.pathname);
+    try { sessionStorage.removeItem('ff_recovery'); } catch {}
     out.innerHTML = `<div class="msg ok">Password saved. You're signed in.</div>`;
     setTimeout(onDone, 900);
   };

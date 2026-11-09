@@ -1,0 +1,10 @@
+{
+  "appId": "uk.co.funfestholidayclub.timesheet",
+  "appName": "Fun Fest",
+  "webDir": "www",
+  "ios": {
+    "contentInset": "always",
+    "backgroundColor": "#fffaf5",
+    "scheme": "Fun Fest"
+  }
+}

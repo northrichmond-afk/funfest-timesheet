@@ -1,4 +1,5 @@
-import { sb, configured, signOut, registerLogin, rpc, isPasswordRecovery } from '../shared/supabase.js';
+import { sb, configured, signOut, registerLogin, rpc, isPasswordRecovery, listenForAuthLinks } from '../shared/supabase.js';
+import { isNative, nativePosition } from '../shared/native.js';
 import { renderLogin, renderNewPassword } from '../shared/login.js';
 import { calcEntry, fmtHours, localDate, localTime, decimalHours, distanceM } from '../shared/hours.js';
 import { esc, toast } from '../shared/ui.js';
@@ -11,7 +12,14 @@ let me = null;          // staff row
 let settings = {};
 let timer = null;
 
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+if (!isNative && 'serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+// iPhone app: sign-in / confirm / reset links come back into the app
+listenForAuthLinks(({ recovery, error }) => {
+  if (error) { toast(error, 6000); return; }
+  if (recovery) { try { sessionStorage.setItem('ff_recovery', '1'); } catch {} }
+  boot();
+});
+const recoveryPending = () => { try { return isPasswordRecovery || sessionStorage.getItem('ff_recovery') === '1'; } catch { return isPasswordRecovery; } };
 document.getElementById('signout').onclick = signOut;
 window.addEventListener('online', () => flushQueue().then(render));
 
@@ -23,7 +31,7 @@ async function boot() {
     return;
   }
   const { data: { session } } = await sb.auth.getSession();
-  if (session && isPasswordRecovery) return renderNewPassword(view, () => location.replace(location.pathname));
+  if (session && recoveryPending()) return renderNewPassword(view, () => location.replace(location.pathname));
   if (!session) return showLogin();
 
   try {
@@ -321,6 +329,7 @@ async function showNearbyVenue(sites, planned) {
 }
 
 function getPosition(opts = {}) {
+  if (isNative) return nativePosition(opts);
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) return reject({ code: 'unsupported' });
     navigator.geolocation.getCurrentPosition(resolve, reject,
@@ -329,7 +338,7 @@ function getPosition(opts = {}) {
 }
 
 function locationErrorText(e) {
-  if (e.code === 1) return 'Location permission is blocked. Turn it on for this app in your phone settings (Settings → Privacy → Location), then try again.';
+  if (e.code === 1) return isNative ? 'Location is switched off for Fun Fest. Go to Settings → Fun Fest → Location and choose "While Using the App", then try again.' : 'Location permission is blocked. Turn it on for this app in your phone settings (Settings → Privacy → Location), then try again.';
   if (e.code === 2) return "Your phone couldn't find your location. Step outside or near a window and try again.";
   if (e.code === 3) return 'Finding your location took too long. Please try again.';
   if (e.code === 'unsupported') return "This phone/browser doesn't support location.";
@@ -377,6 +386,7 @@ function isNetworkError(e) {
 // ── Install hint ────────────────────────────────────────────
 
 function installHint() {
+  if (isNative) return '';
   const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
   if (standalone) return '';
   const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);

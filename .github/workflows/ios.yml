@@ -1,0 +1,75 @@
+name: iPhone app
+
+# Run from the Actions tab ("Run workflow"), or by pushing a tag like ios-v1.0.1.
+# Without the Apple secrets it does a test build only; with them it uploads to TestFlight.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['ios-v*']
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      HAS_APPLE_SECRETS: ${{ secrets.APPLE_TEAM_ID != '' && secrets.ASC_KEY_ID != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install and copy web app into the iOS project
+        run: |
+          npm ci
+          node --test tests/*.test.js
+          npm run ios:sync
+
+      - name: Test build (no signing)
+        if: env.HAS_APPLE_SECRETS != 'true'
+        run: |
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO build | tail -n 30
+          echo "::notice::Test build passed. Add the Apple secrets (see IOS.md) to upload to TestFlight."
+
+      - name: Write App Store Connect API key
+        if: env.HAS_APPLE_SECRETS == 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/keys"
+          echo "${{ secrets.ASC_KEY_P8_BASE64 }}" | base64 --decode > "$RUNNER_TEMP/keys/AuthKey.p8"
+
+      - name: Archive (signed)
+        if: env.HAS_APPLE_SECRETS == 'true'
+        run: |
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            DEVELOPMENT_TEAM=${{ secrets.APPLE_TEAM_ID }} CODE_SIGN_STYLE=Automatic \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey.p8" \
+            -authenticationKeyID ${{ secrets.ASC_KEY_ID }} \
+            -authenticationKeyIssuerID ${{ secrets.ASC_ISSUER_ID }} \
+            archive | tail -n 40
+
+      - name: Upload to TestFlight
+        if: env.HAS_APPLE_SECRETS == 'true'
+        run: |
+          /usr/libexec/PlistBuddy -c "Add :teamID string ${{ secrets.APPLE_TEAM_ID }}" ios/ci/ExportOptions.plist
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            -exportOptionsPlist ios/ci/ExportOptions.plist -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey.p8" \
+            -authenticationKeyID ${{ secrets.ASC_KEY_ID }} \
+            -authenticationKeyIssuerID ${{ secrets.ASC_ISSUER_ID }}
+          echo "::notice::Build ${{ github.run_number }} uploaded. It appears in App Store Connect → TestFlight after Apple's processing (usually 10–30 min)."
+
+      - name: Remove API key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/keys"

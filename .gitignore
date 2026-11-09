@@ -1,3 +1,9 @@
 node_modules/
 .DS_Store
 *.log
+www/
+ios/App/App/public/
+ios/App/App/capacitor.config.json
+ios/App/App/config.xml
+ios/DerivedData/
+ios/App/build/
