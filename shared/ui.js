@@ -24,3 +24,9 @@ export function download(filename, text, type = 'text/csv') {
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
+
+// Purple header strip: 'Admin' or 'Staff' depending on who is signed in (blank when signed out)
+export function setRoleTitle(person) {
+  const el = document.getElementById('roleTitle');
+  if (el) el.textContent = person ? (person.role === 'admin' ? 'Admin' : 'Staff') : '';
+}

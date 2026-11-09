@@ -1,7 +1,7 @@
 import { sb, configured, signOut, registerLogin, rpc, isPasswordRecovery } from '../shared/supabase.js';
 import { renderLogin, renderNewPassword } from '../shared/login.js';
 import { calcEntry, fmtHours, decimalHours, localDate, localTime, londonDateTime, toCSV } from '../shared/hours.js';
-import { esc, toast, download } from '../shared/ui.js';
+import { esc, toast, download, setRoleTitle } from '../shared/ui.js';
 import { staffMatches } from '../shared/search.js';
 
 const view = document.getElementById('view');
@@ -54,6 +54,7 @@ async function boot() {
   document.getElementById('signout').classList.remove('hidden');
   document.getElementById('signout').onclick = signOut;
   state.me = await registerLogin();
+  setRoleTitle(state.me);
   if (!state.me || state.me.role !== 'admin') {
     view.innerHTML = `<div class="card msg bad">${esc(session.user.email)} doesn't have admin access. <a href="#" id="so">Sign out</a></div>`;
     document.getElementById('so').onclick = (e) => { e.preventDefault(); signOut(); };

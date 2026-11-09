@@ -2,7 +2,7 @@ import { sb, configured, signOut, registerLogin, rpc, isPasswordRecovery, listen
 import { isNative, nativePosition } from '../shared/native.js';
 import { renderLogin, renderNewPassword } from '../shared/login.js';
 import { calcEntry, fmtHours, localDate, localTime, decimalHours, distanceM } from '../shared/hours.js';
-import { esc, toast } from '../shared/ui.js';
+import { esc, toast, setRoleTitle } from '../shared/ui.js';
 
 const view = document.getElementById('view');
 const dlg = document.getElementById('dlg');
@@ -41,6 +41,7 @@ async function boot() {
     return;
   }
   document.getElementById('signout').classList.remove('hidden');
+  setRoleTitle(me);
   if (!me) return showNotRegistered(session.user.email);
   if (!me.consent_location_at) return showConsent();
 
