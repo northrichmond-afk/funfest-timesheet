@@ -28,5 +28,9 @@ export function download(filename, text, type = 'text/csv') {
 // Purple header strip: 'Admin' or 'Staff' depending on who is signed in (blank when signed out)
 export function setRoleTitle(person) {
   const el = document.getElementById('roleTitle');
-  if (el) el.textContent = person ? (person.role === 'admin' ? 'Admin' : 'Staff') : '';
+  if (!el) return;
+  if (!person) { el.textContent = ''; return; }
+  const first = (person.name || '').trim().split(/\s+/)[0];
+  el.textContent = (person.role === 'admin' ? 'Admin' : 'Staff') + (first ? ` · ${first}` : '');
+  el.title = `Signed in as ${person.name || ''} (${person.email || ''})`;
 }

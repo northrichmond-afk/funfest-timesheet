@@ -118,6 +118,8 @@ language sql stable security definer set search_path = public as $$
   where status <> 'left'
     and (auth_user_id = auth.uid()
          or (auth_user_id is null and lower(email) = lower(auth.jwt() ->> 'email')))
+  order by (lower(email) = lower(coalesce(auth.jwt() ->> 'email', ''))) desc,
+           (auth_user_id is not distinct from auth.uid()) desc
   limit 1
 $$;
 
@@ -156,6 +158,7 @@ begin
   if s.id is null then
     return json_build_object('ok', false, 'error', 'not_registered');
   end if;
+  update staff set auth_user_id = null where auth_user_id = auth.uid() and id <> s.id;
   update staff set auth_user_id = auth.uid(),
                    last_login_at = now(),
                    status = case when status = 'invited' then 'active' else status end
