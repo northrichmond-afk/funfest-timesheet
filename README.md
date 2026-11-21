@@ -115,7 +115,7 @@ Choose the club (North Richmond or Hounslow), type one or more booking (order) n
 
 ## Staff details and certificates
 
-- **Staff app › My details:** staff fill in and update the details from the Fun Fest application form (personal details, employment, qualifications and training, two referees, safeguarding declaration) plus **DBS certificate number, issue date and DBS Update Service ID**, and upload certificates (photo or PDF, up to 15 MB) with a type such as *DBS certificate* or *Paediatric first aid certificate*.
+- **Staff app › My details:** staff fill in and update their personal details, qualifications and training, plus **DBS certificate number, issue date and DBS Update Service ID**, and upload certificates (photo or PDF, up to 15 MB) with a type such as *DBS certificate* or *Paediatric first aid certificate*.
 - Stored in Supabase: details in `staff_profiles`, files in the private Storage bucket `staff-docs`. Staff see only their own; they can remove an upload until the office has filed it. Run `supabase/004_staff_details.sql` once in the SQL Editor.
 - **Admin › Staff › Staff files → iCloud:** choose iCloud Drive › FunFest › Staff once (Chrome or Edge on the Mac). New uploads are copied into each person's folder as e.g. `DBS certificate - Alice Sweeney (2026-11-21).pdf`, and their details as `Staff details - Alice Sweeney.pdf` (rewritten when they change). Existing folders are matched by name; set a different folder per person under **Details & files**. Copying runs automatically when the Staff tab opens and the folder is already allowed; otherwise click **Copy to iCloud now**.
 - **Details & files** (per person on the Staff tab): view and edit their details, view/delete/upload documents.
