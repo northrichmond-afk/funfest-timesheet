@@ -106,3 +106,16 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .login { max-width: 420px; margin: 2rem auto; }
 .divider { display: flex; align-items: center; gap: .6rem; color: var(--muted); font-size: .85rem; }
 .divider::before, .divider::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+
+/* Staff details form */
+fieldset.section { border: 1px solid var(--line); border-radius: 10px; padding: .6rem .9rem .9rem; margin: 0; }
+fieldset.section > legend { font-family: var(--font-nav); font-weight: 800; color: var(--purple); padding: 0 .3rem; }
+fieldset.section > * + * { margin-top: .7rem; }
+fieldset.section label { display: block; }
+fieldset.yesno { border: 0; padding: 0; margin: .7rem 0 0; }
+fieldset.yesno legend { font-size: .95rem; padding: 0; margin-bottom: .3rem; }
+fieldset.yesno label { display: inline-flex; align-items: center; gap: .3rem; margin-right: 1.2rem; font-weight: 600; }
+fieldset.yesno input, label.check input { width: auto; min-height: 0; }
+label.check { display: flex !important; gap: .6rem; align-items: flex-start; font-size: .9rem; }
+label.check input { margin-top: .25rem; }
+[hidden] { display: none !important; }

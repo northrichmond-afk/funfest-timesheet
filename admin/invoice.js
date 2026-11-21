@@ -289,7 +289,7 @@ function readForm(form) {
 // ── PDF ───────────────────────────────────────────────────────
 
 let jsPDFLoad;
-function loadJsPDF() {
+export function loadJsPDF() {
   jsPDFLoad ||= new Promise((ok, fail) => {
     if (window.jspdf) return ok(window.jspdf.jsPDF);
     const s = document.createElement('script');
@@ -301,7 +301,7 @@ function loadJsPDF() {
   return jsPDFLoad;
 }
 
-async function imageData(url) {
+export async function imageData(url) {
   const blob = await (await fetch(url)).blob();
   return new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(blob); });
 }
