@@ -10,7 +10,7 @@ Staff clock in and out on their phones. The app checks they're at the venue usin
 | Folder | What it is |
 |---|---|
 | `app/` | Staff phone app (installable PWA): Google sign-in, location notice, Start/End shift, My hours, request a change, works offline |
-| `admin/` | Admin pages: Today, Rota, Timesheets, Requests, Reports, Staff, Venues, Settings, Admin (invoices from website orders) |
+| `admin/` | Admin pages: Today, Rota, Timesheets, Requests, Reports, Staff, Venues, Settings, Invoices (from website orders) |
 | `shared/` | Supabase connection, hours calculation, styles |
 | `supabase/schema.sql` | Database tables, security rules and functions, with the first admin seeded |
 | `.github/workflows/pages.yml` | Runs tests and publishes the site to GitHub Pages on every push to `main` |
@@ -96,11 +96,11 @@ npm run serve        # http://localhost:8080/app/  (add http://localhost:8080/**
 npm test             # hours calculation tests
 ```
 
-## Admin tab: invoices from website orders
+## Invoices tab: invoices from website orders
 
 Choose the club (North Richmond or Hounslow), type one or more booking (order) numbers separated by commas, or paste the order's WordPress link, and the app fetches it from that club's WordPress/WooCommerce site, shows the details for checking, and saves `INVOICE_<number>_NorthRichmond.pdf` / `INVOICE_<number>_Hounslow.pdf` in the chosen folder (iCloud Drive › FunFest › Invoice). With several numbers, choose **One invoice for all** (e.g. `INVOICE_5882_5946_Hounslow.pdf`) or **Separate invoices** (checked and saved one after another).
 
-- **One-time connection:** in WordPress admin go to **Users › Profile › Application Passwords**, add one called "Fun Fest Timesheet", then paste your WordPress username and that password into **Admin › Website connection**. The same login works for every club site. It's stored only in that browser on that computer, never in this repo or the database.
+- **One-time connection:** in WordPress admin go to **Users › Profile › Application Passwords**, add one called "Fun Fest Timesheet", then paste your WordPress username and that password into **Invoices › Website connection**. The same login works for every club site. It's stored only in that browser on that computer, never in this repo or the database.
 - **Save folder:** click **Choose folder…** once and pick iCloud Drive › FunFest › Invoice. This needs Chrome or Edge on the Mac; Safari and phones download the PDF instead.
 - Parent and child details are not stored by the timesheet app; they only go into the PDF.
 - Letterhead details (address, Ofsted number, signatory) can be changed per club under **Invoice letterhead details** (North Richmond Ofsted 2818035, Hounslow Ofsted 2909023).
