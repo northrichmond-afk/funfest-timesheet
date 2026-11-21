@@ -37,3 +37,21 @@ test('form has personal details, qualifications/training and DBS only, and escap
   assert.match(html, /data-showif="dbs_update_service" hidden/);
   assert.ok(!detailsViewHTML({ dbs_update_service: false }).includes('Update Service ID'));
 });
+
+test('critical information rules', async () => {
+  const { criticalIssues } = await import('../shared/staffdetails.js');
+  const T = '2026-11-21';
+  const keys = (p, d = 0) => criticalIssues(p, d, T).map(i => i.key);
+  assert.deepEqual(keys({}), ['dbs']);
+  assert.deepEqual(keys({ dbs_update_service_number: 'C1' }), []);
+  assert.deepEqual(keys({ dbs_certificate_number: '001', dbs_expiry_date: '2025-08-04' }), ['expired']);
+  assert.deepEqual(keys({ dbs_certificate_number: '001', dbs_expiry_date: '2027-01-01' }), []);
+  assert.deepEqual(keys({ dbs_certificate_number: '001', dbs_issue_date: '2023-06-09' }), ['expired']);   // > 3 years, no Update Service
+  assert.deepEqual(keys({ dbs_certificate_number: '001', dbs_issue_date: '2023-06-09', dbs_update_service_number: 'C1' }), []);
+  assert.deepEqual(keys({ dbs_certificate_number: '001', dbs_issue_date: '2024-06-09' }), []);
+  // references: only for starts on/after 1 Sep 2026
+  assert.deepEqual(keys({ dbs_certificate_number: '001', start_date: '2026-08-31' }), []);
+  assert.deepEqual(keys({ dbs_certificate_number: '001', start_date: '2026-09-01', ref1_received: '2026-08-01' }), ['refs']);
+  assert.equal(criticalIssues({ dbs_certificate_number: '001', start_date: '2026-10-01', ref1_received: 'x', ref2_received: 'y' }, 2, T)[0].text, '2 of 3 references received (2 reference files uploaded)');
+  assert.deepEqual(keys({ dbs_certificate_number: '001', start_date: '2026-10-01', ref1_received: 'x', ref2_received: 'y', ref3_received: 'z' }), []);
+});

@@ -4,6 +4,7 @@ import { calcEntry, fmtHours, decimalHours, localDate, localTime, londonDateTime
 import { esc, toast, download, setRoleTitle } from '../shared/ui.js';
 import { staffMatches } from '../shared/search.js';
 import { tabAdmin } from './invoice.js';
+import { criticalIssues } from '../shared/staffdetails.js';
 import { staffFilesCard, openStaffDetails } from './stafffiles.js';
 import { importCard } from './staffimport.js';
 
@@ -487,7 +488,7 @@ const repFilter = { from: addDays(mondayOf(today()), -7), to: addDays(mondayOf(t
 
 // ── Reports (sub-tabs: Timesheets, Staff list) ───────────────
 
-const REPORTS = [['timesheets', 'Timesheets'], ['stafflist', 'Staff list'], ['nodbs', 'Missing DBS Update ID']];
+const REPORTS = [['timesheets', 'Timesheets'], ['stafflist', 'Staff list'], ['nodbs', 'Missing DBS Update ID'], ['critical', 'Critical info']];
 let reportTab = 'timesheets';
 function reportTabsHTML() {
   return `<div class="subtabs">${REPORTS.map(([k, l]) => `<button data-rt="${k}" class="${reportTab === k ? 'active' : ''}">${l}</button>`).join('')}</div>`;
@@ -497,7 +498,8 @@ function wireReportTabs() {
 }
 function tabReports() {
   view.innerHTML = '<p class="center muted">Loading…</p>';
-  return reportTab === 'stafflist' ? reportStaffList() : reportTab === 'nodbs' ? reportMissingDbs() : reportTimesheets();
+  return reportTab === 'stafflist' ? reportStaffList() : reportTab === 'nodbs' ? reportMissingDbs()
+    : reportTab === 'critical' ? reportCritical() : reportTimesheets();
 }
 
 const staffListFilter = { status: 'current', q: '' };
@@ -615,6 +617,67 @@ async function reportMissingDbs() {
   ]));
   $('ndPrint').onclick = () => window.print();
   view.querySelectorAll('[data-nd]').forEach(b => b.onclick = () => openStaffDetails(dlg, rows[+b.dataset.nd].s, { siteName }));
+}
+
+// Critical information: DBS reference, DBS expiry, three references for staff starting from Sep 2026
+const criticalFilter = { status: 'current', only: '' };
+async function reportCritical() {
+  await loadRef();
+  const [{ data: profiles, error }, { data: refDocs }] = await Promise.all([
+    sb.from('staff_profiles').select('staff_id, phone, start_date, dbs_certificate_number, dbs_issue_date, dbs_update_service_number, dbs_expiry_date, ref1_received, ref2_received, ref3_received'),
+    sb.from('staff_documents').select('staff_id, kind').eq('kind', 'Reference'),
+  ]);
+  const prof = Object.fromEntries((profiles || []).map(p => [p.staff_id, p]));
+  const refCount = {};
+  for (const d of refDocs || []) refCount[d.staff_id] = (refCount[d.staff_id] || 0) + 1;
+  const f = criticalFilter;
+  const people = state.staff
+    .filter(s => f.status === 'all' || (s.role !== 'admin' && (f.status === 'current' ? s.status !== 'left' : s.status === f.status)));
+  const all = people.map(s => ({ s, p: prof[s.id] || {}, issues: criticalIssues(prof[s.id] || {}, refCount[s.id] || 0) }));
+  const count = k => all.filter(r => r.issues.some(i => i.key === k)).length;
+  const rows = all.filter(r => r.issues.length && (!f.only || r.issues.some(i => i.key === f.only)));
+  const noStart = all.filter(r => !r.p.start_date).length;
+  const fmtD = d => (d ? new Date(d + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '');
+  const pillCls = { dbs: 'bad', expired: 'bad', refs: 'warn' };
+  view.innerHTML = `${reportTabsHTML()}
+    <div class="card">
+      <h2>Staff missing critical information</h2>
+      ${error ? `<div class="msg warn small">${esc(error.message)}</div>` : ''}
+      <div class="stats">
+        ${[['', 'Need attention', all.filter(r => r.issues.length).length], ['dbs', 'No DBS reference', count('dbs')], ['expired', 'DBS expired', count('expired')], ['refs', 'Under 3 references (start from Sep 2026)', count('refs')]]
+          .map(([k, l, n]) => `<button class="stat ${f.only === k ? 'active' : ''}" data-only="${k}" style="text-align:left;cursor:pointer"><div class="v">${n || 0}</div><div class="k">${l}</div></button>`).join('')}
+      </div>
+      <div class="toolbar">
+        <label>Show<select id="crStatus">${[['current', 'Current staff'], ['active', 'Active'], ['invited', 'Invited'], ['all', 'Everyone (incl. admins and leavers)']]
+          .map(([v, l]) => `<option value="${v}" ${f.status === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <button id="crCsv">⬇️ CSV</button>
+        <button id="crPrint">🖨 Print</button>
+      </div>
+      ${rows.length ? `<div class="table-wrap"><table>
+        <tr><th>Name</th><th>Status</th><th>Start date</th><th>DBS</th><th>Missing / problem</th><th></th></tr>
+        ${rows.map((r, i) => `<tr>
+          <td>${esc(r.s.name)}</td>
+          <td>${r.s.status === 'active' ? '<span class="pill ok">Active</span>' : r.s.status === 'invited' ? '<span class="pill warn">Invited</span>' : '<span class="pill bad">Inactive</span>'}</td>
+          <td class="small">${fmtD(r.p.start_date) || '<span class="muted">not recorded</span>'}</td>
+          <td class="small">${esc(r.p.dbs_certificate_number || '')}${r.p.dbs_update_service_number ? `<div class="muted">${esc(r.p.dbs_update_service_number)}</div>` : ''}${r.p.dbs_expiry_date ? `<div class="muted">expiry ${fmtD(r.p.dbs_expiry_date)}</div>` : ''}</td>
+          <td>${r.issues.map(x => `<span class="pill ${pillCls[x.key]}" style="margin:0 .2rem .2rem 0">${esc(x.text)}</span>`).join('')}</td>
+          <td><button class="small" data-cr="${i}">Details</button></td></tr>`).join('')}
+      </table></div>` : '<p>✅ Nobody is missing critical information.</p>'}
+      <p class="small muted">Rules: <b>DBS reference</b> = certificate number or Update Service ID. <b>DBS expired</b> = the DBS expiry / renewal date has passed, or with no expiry date, a certificate over 3 years old with no Update Service ID.
+        <b>3 references</b> applies to staff with a start date on or after 1 September 2026 and counts the “Reference received” dates in the office record.
+        ${noStart ? `${noStart} ${noStart === 1 ? 'person has' : 'people have'} no start date, so the references rule can’t be checked for them.` : ''}
+        Fix anything under <b>Details › Office record › Edit</b>.</p>
+    </div>`;
+  wireReportTabs();
+  const $ = id => document.getElementById(id);
+  $('crStatus').onchange = () => { f.status = $('crStatus').value; reportCritical(); };
+  view.querySelectorAll('[data-only]').forEach(b => b.onclick = () => { f.only = b.dataset.only; reportCritical(); });
+  $('crCsv').onclick = () => download(`funfest-critical-info-${today()}.csv`, toCSV([
+    ['Name', 'Status', 'Login email', 'Start date', 'DBS certificate', 'Update Service ID', 'DBS expiry', 'Problems'],
+    ...rows.map(r => [r.s.name, r.s.status, r.s.email, r.p.start_date || '', r.p.dbs_certificate_number || '', r.p.dbs_update_service_number || '', r.p.dbs_expiry_date || '', r.issues.map(x => x.text).join('; ')]),
+  ]));
+  $('crPrint').onclick = () => window.print();
+  view.querySelectorAll('[data-cr]').forEach(b => b.onclick = () => openStaffDetails(dlg, rows[+b.dataset.cr].s, { siteName }));
 }
 
 async function reportTimesheets() {
