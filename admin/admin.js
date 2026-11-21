@@ -666,7 +666,7 @@ async function tabStaff() {
   };
   view.querySelectorAll('[data-inv]').forEach(b => b.onclick = () => invite(state.staff.find(s => s.id === b.dataset.inv)));
   view.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => editStaff(state.staff.find(s => s.id === b.dataset.ed)));
-  view.querySelectorAll('[data-det]').forEach(b => b.onclick = () => openStaffDetails(dlg, state.staff.find(s => s.id === b.dataset.det)));
+  view.querySelectorAll('[data-det]').forEach(b => b.onclick = () => openStaffDetails(dlg, state.staff.find(s => s.id === b.dataset.det), { siteName }));
   staffFilesCard(document.getElementById('staffFiles'), state.staff);
 
 }
