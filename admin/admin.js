@@ -485,7 +485,81 @@ async function tabRequests() {
 
 const repFilter = { from: addDays(mondayOf(today()), -7), to: addDays(mondayOf(today()), -1), site: '' };
 
-async function tabReports() {
+// ── Reports (sub-tabs: Timesheets, Staff list) ───────────────
+
+const REPORTS = [['timesheets', 'Timesheets'], ['stafflist', 'Staff list']];
+let reportTab = 'timesheets';
+function reportTabsHTML() {
+  return `<div class="subtabs">${REPORTS.map(([k, l]) => `<button data-rt="${k}" class="${reportTab === k ? 'active' : ''}">${l}</button>`).join('')}</div>`;
+}
+function wireReportTabs() {
+  view.querySelectorAll('[data-rt]').forEach(b => b.onclick = () => { reportTab = b.dataset.rt; tabReports(); });
+}
+function tabReports() {
+  view.innerHTML = '<p class="center muted">Loading…</p>';
+  return reportTab === 'stafflist' ? reportStaffList() : reportTimesheets();
+}
+
+const staffListFilter = { status: 'current', q: '' };
+async function reportStaffList() {
+  await loadRef();
+  const { data: profiles, error } = await sb.from('staff_profiles')
+    .select('staff_id, full_name, personal_email, phone, address, dbs_certificate_number, dbs_issue_date, dbs_update_service, dbs_update_service_number, dbs_checked_on');
+  const prof = Object.fromEntries((profiles || []).map(p => [p.staff_id, p]));
+  const fmtD = d => (d ? new Date(d + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '');
+  const f = staffListFilter;
+  const rows = state.staff
+    .filter(s => f.status === 'all' || (f.status === 'current' ? s.status !== 'left' : s.status === f.status))
+    .map(s => {
+      const p = prof[s.id] || {};
+      return {
+        s, name: s.name, email: s.email, personal: p.personal_email && p.personal_email.toLowerCase() !== s.email.toLowerCase() ? p.personal_email : '',
+        phone: p.phone || s.phone || '', address: p.address || '',
+        dbs: p.dbs_certificate_number || '', issued: p.dbs_issue_date || '',
+        update: p.dbs_update_service ? (p.dbs_update_service_number || 'Yes') : p.dbs_update_service === false ? 'No' : '',
+        checked: p.dbs_checked_on || '',
+      };
+    })
+    .filter(r => !f.q || [r.name, r.email, r.personal, r.phone, r.address, r.dbs, r.update].join(' ').toLowerCase().includes(f.q.toLowerCase()));
+  const missing = rows.filter(r => !r.dbs && !(r.update && r.update !== 'No')).length;
+  view.innerHTML = `${reportTabsHTML()}
+    <div class="card">
+      <h2>Staff list</h2>
+      ${error ? `<div class="msg warn small">${esc(error.message)}</div>` : ''}
+      <div class="toolbar">
+        <label>Show<select id="slStatus">${[['current', 'Current (not left)'], ['all', 'Everyone'], ['active', 'Active'], ['invited', 'Invited'], ['left', 'Left']]
+          .map(([v, l]) => `<option value="${v}" ${f.status === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label style="flex:1 1 220px">Search<input id="slQ" type="search" value="${esc(f.q)}" placeholder="Name, email, address, DBS number"></label>
+        <button id="slCsv">⬇️ CSV</button>
+        <button id="slPrint">🖨 Print</button>
+      </div>
+      <p class="small muted">${rows.length} ${rows.length === 1 ? 'person' : 'people'}${missing ? ` · <span class="pill warn">${missing} without a DBS number</span>` : ''}</p>
+      <div class="table-wrap"><table>
+        <tr><th>Name</th><th>Email</th><th>Address</th><th>DBS certificate</th><th>Issued</th><th>Update Service ID</th><th>Checked</th><th></th></tr>
+        ${rows.map((r, i) => `<tr>
+          <td>${esc(r.name)}${r.s.status === 'left' ? ' <span class="pill bad">Left</span>' : ''}</td>
+          <td class="small">${esc(r.email)}${r.personal ? `<div class="muted">${esc(r.personal)}</div>` : ''}${r.phone ? `<div class="muted">${esc(r.phone)}</div>` : ''}</td>
+          <td class="small" style="max-width:260px">${esc(r.address)}</td>
+          <td class="small">${r.dbs ? esc(r.dbs) : '<span class="pill warn">Missing</span>'}</td>
+          <td class="small">${fmtD(r.issued)}</td>
+          <td class="small">${esc(r.update)}</td>
+          <td class="small">${fmtD(r.checked)}</td>
+          <td><button data-sl="${i}" class="small">Details</button></td></tr>`).join('')}
+      </table></div>
+    </div>`;
+  wireReportTabs();
+  const $ = id => document.getElementById(id);
+  $('slStatus').onchange = () => { f.status = $('slStatus').value; reportStaffList(); };
+  let t; $('slQ').oninput = () => { clearTimeout(t); t = setTimeout(() => { f.q = $('slQ').value; reportStaffList().then(() => { const q = $('slQ'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }); }, 300); };
+  $('slCsv').onclick = () => download(`funfest-staff-list-${today()}.csv`, toCSV([
+    ['Name', 'Login email', 'Personal email', 'Phone', 'Address', 'DBS certificate number', 'DBS issue date', 'DBS Update Service ID', 'DBS checked on', 'Status'],
+    ...rows.map(r => [r.name, r.email, r.personal, r.phone, r.address, r.dbs, r.issued, r.update, r.checked, r.s.status]),
+  ]));
+  $('slPrint').onclick = () => window.print();
+  view.querySelectorAll('[data-sl]').forEach(b => b.onclick = () => openStaffDetails(dlg, rows[+b.dataset.sl].s, { siteName }));
+}
+
+async function reportTimesheets() {
   const f = repFilter;
   const entries = await fetchEntries(f);
   const { data: plans } = await sb.from('planned_shifts').select('*').gte('shift_date', f.from).lte('shift_date', f.to);
@@ -523,7 +597,7 @@ async function tabReports() {
   const totPay = rows.reduce((s, r) => s + (rate(r.id) ? (r.paid / 60) * rate(r.id) : 0), 0);
   const exceptions = detail.filter(({ e, c }) => e.status === 'flagged' || c.open || c.lateMins || c.earlyFinishMins);
 
-  view.innerHTML = `
+  view.innerHTML = `${reportTabsHTML()}
     <div class="card">
       <div class="toolbar">
         <label>From<input type="date" id="from" value="${f.from}"></label>
@@ -574,10 +648,11 @@ async function tabReports() {
     </div>`;
 
   const $ = id => document.getElementById(id);
-  const set = (from, to) => { Object.assign(f, { from, to }); tabReports(); };
+  wireReportTabs();
+  const set = (from, to) => { Object.assign(f, { from, to }); reportTimesheets(); };
   $('from').onchange = () => set($('from').value, f.to);
   $('to').onchange = () => set(f.from, $('to').value);
-  $('fv').onchange = () => { f.site = $('fv').value; tabReports(); };
+  $('fv').onchange = () => { f.site = $('fv').value; reportTimesheets(); };
   $('thisw').onclick = () => set(mondayOf(today()), addDays(mondayOf(today()), 6));
   $('lastw').onclick = () => set(addDays(mondayOf(today()), -7), addDays(mondayOf(today()), -1));
   $('thism').onclick = () => { const t = today(); const first = t.slice(0, 8) + '01';
@@ -599,7 +674,7 @@ async function tabReports() {
   if ($('lock')) $('lock').onclick = async () => {
     if (!confirmBox(`Lock ${f.from} to ${f.to}? Times in this period can no longer be edited.`)) return;
     const { error } = await sb.from('locked_periods').insert({ period_start: f.from, period_end: f.to, locked_by: state.me.id });
-    if (error) toast(error.message); else { toast('Period locked'); tabReports(); }
+    if (error) toast(error.message); else { toast('Period locked'); reportTimesheets(); }
   };
 }
 
