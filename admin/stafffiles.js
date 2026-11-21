@@ -30,9 +30,9 @@ function idb(mode, fn) {
     };
   });
 }
-const getRoot = () => idb('readonly', s => s.get(KEY)).catch(() => null);
+export const getRoot = () => idb('readonly', s => s.get(KEY)).catch(() => null);
 
-async function pickRoot() {
+export async function pickRoot() {
   try {
     const h = await window.showDirectoryPicker({ id: 'ff-staff', mode: 'readwrite', startIn: 'documents' });
     await idb('readwrite', s => s.put(h, KEY));
@@ -40,7 +40,7 @@ async function pickRoot() {
   } catch (e) { if (e.name !== 'AbortError') toast(e.message); return null; }
 }
 
-async function permission(h, ask) {
+export async function permission(h, ask) {
   let p = await h.queryPermission({ mode: 'readwrite' });
   if (p !== 'granted' && ask) { try { p = await h.requestPermission({ mode: 'readwrite' }); } catch { /* needs a click */ } }
   return p === 'granted';

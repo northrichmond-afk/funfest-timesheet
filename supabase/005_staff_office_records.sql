@@ -48,3 +48,6 @@ begin
   if not new.declaration_agreed then new.declared_at := null; end if;
   return new;
 end $$;
+
+-- Staff files: accept any file type up to 50 MB (the import brings in Word, Excel, zip, HEIC, Pages…)
+update storage.buckets set allowed_mime_types = null, file_size_limit = 52428800 where id = 'staff-docs';

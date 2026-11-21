@@ -5,6 +5,7 @@ import { esc, toast, download, setRoleTitle } from '../shared/ui.js';
 import { staffMatches } from '../shared/search.js';
 import { tabAdmin } from './invoice.js';
 import { staffFilesCard, openStaffDetails } from './stafffiles.js';
+import { importCard } from './staffimport.js';
 
 const view = document.getElementById('view');
 const dlg = document.getElementById('dlg');
@@ -609,6 +610,7 @@ async function tabStaff() {
   const pill = s => s.status === 'active' ? '<span class="pill ok">Active</span>' : s.status === 'invited' ? '<span class="pill warn">Invited</span>' : '<span class="pill bad">Left</span>';
   view.innerHTML = `
     <div class="card" id="staffFiles"></div>
+    <div class="card" id="staffImport"></div>
     <div class="card">
       <h2>Add staff</h2>
       <p class="muted small">Use the email the person will sign in with: their <strong>Google account</strong>, or any email if they'll use a password. Only emails on this list can sign in.</p>
@@ -668,6 +670,7 @@ async function tabStaff() {
   view.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => editStaff(state.staff.find(s => s.id === b.dataset.ed)));
   view.querySelectorAll('[data-det]').forEach(b => b.onclick = () => openStaffDetails(dlg, state.staff.find(s => s.id === b.dataset.det), { siteName }));
   staffFilesCard(document.getElementById('staffFiles'), state.staff);
+  importCard(document.getElementById('staffImport'), async () => { await loadRef(); staffFilesCard(document.getElementById('staffFiles'), state.staff); });
 
 }
 
