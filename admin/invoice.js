@@ -10,6 +10,7 @@
 // • Parent/child details are not stored anywhere except the PDF itself.
 
 import { esc, toast } from '../shared/ui.js';
+import { gmailConfigured, gmailToken, sendGmail, isEmail } from './gmail.js';
 import { extractInvoice, mergeInvoices, parseOrderList, invoiceFileName, longDate, gbp } from '../shared/invoice.js';
 
 const LS_CONN = 'ff.invoice.wc';      // { user, pass } – one WordPress login works for every club site
@@ -21,6 +22,7 @@ const FOLDER_HINT = 'iCloud Drive › FunFest › Invoice';
 const COMMON = {
   phone: '07545 331344',
   email: '',
+  sendFrom: '',
   settingRef: '',
   company: 'Vadivu Fun Fest Club Ltd',
   companyNo: '12924442',
@@ -47,12 +49,14 @@ let clubId = (() => { try { return CLUBS[localStorage.getItem(LS_SEL)] ? localSt
 const club = (id = clubId) => ({ ...CLUBS[id], ...getJSON(LS_CLUB + id, {}), id });
 
 let current = null;           // invoice fields being edited
+let dialog = null;            // the page's <dialog>, for the email box
 let queue = [];               // further invoices waiting ("Separate invoices" mode)
 const made = [];              // invoices created this session
 
 // ── Tab ───────────────────────────────────────────────────────
 
 export function tabAdmin(view, dlg) {
+  dialog = dlg;
   const c = conn();
   const cl = club();
   view.innerHTML = `
@@ -102,7 +106,7 @@ export function tabAdmin(view, dlg) {
       <form id="invClub" class="stack" style="max-width:520px;margin-top:.8rem">
         ${Object.entries({ name: 'Club name', premises: 'Premises address', phone: 'Phone', email: 'Email (optional)', ofsted: 'Ofsted registration number',
           settingRef: 'Setting reference / URN (optional)', company: 'Company name', companyNo: 'Company registration number',
-          signName: 'Signed by', signRole: 'Role', fileTag: 'File name tag (INVOICE_<no>_<tag>.pdf)' })
+          signName: 'Signed by', signRole: 'Role', sendFrom: 'Email invoices from (this club’s Google account)', fileTag: 'File name tag (INVOICE_<no>_<tag>.pdf)' })
           .map(([k, l]) => `<label>${esc(l)}<input name="${k}" value="${esc(cl[k])}"></label>`).join('')}
         <div style="display:flex;gap:.5rem"><button class="primary">Save</button><button type="button" id="clubReset">Reset to defaults</button></div>
       </form>
@@ -231,6 +235,7 @@ function renderForm(view) {
       <label>Note on invoice (optional)<textarea name="note" rows="2">${esc(v.note || '')}</textarea></label>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap">
         <button class="primary" name="go" value="save">💾 Create &amp; save PDF${queue.length ? ', then next' : ''}</button>
+        <button name="go" value="email">✉️ Save &amp; email parent</button>
         <button name="go" value="preview">👁 Preview</button>
         ${queue.length ? '<button type="button" id="invSkip">Skip this one</button>' : ''}
         <button type="button" id="invClear">Clear</button>
@@ -246,6 +251,7 @@ function renderForm(view) {
       const doc = await buildPdf(current, cl);
       const name = invoiceFileName(current.number, cl.fileTag);
       if (action === 'preview') { window.open(doc.output('bloburl'), '_blank'); return; }
+      if (action === 'email') { emailDialog(view, doc, name, cl); return; }
       const where = await savePdf(doc.output('blob'), name);
       if (!where) return;
       made.unshift({ name, where, parent: current.parent, total: current.total });
@@ -476,17 +482,17 @@ async function showDir(view) {
     : '⚠️ No folder chosen yet. Click <b>Choose folder…</b> and pick ' + FOLDER_HINT + '.';
 }
 
-async function savePdf(blob, name) {
+async function savePdf(blob, name, { quiet = false } = {}) {
   if (canPickFolder()) {
     let dir = await getDir();
-    if (!dir) dir = await pickFolder();
+    if (!dir && !quiet) dir = await pickFolder();
     if (dir) {
       let perm = await dir.queryPermission({ mode: 'readwrite' });
-      if (perm !== 'granted') perm = await dir.requestPermission({ mode: 'readwrite' });
+      if (perm !== 'granted') { try { perm = await dir.requestPermission({ mode: 'readwrite' }); } catch { perm = 'denied'; } }
       if (perm === 'granted') {
         let exists = false;
         try { await dir.getFileHandle(name); exists = true; } catch { /* new file */ }
-        if (exists && !window.confirm(`${name} already exists in ${dir.name}. Replace it?`)) return null; // eslint-disable-line no-alert
+        if (exists && !quiet && !window.confirm(`${name} already exists in ${dir.name}. Replace it?`)) return null; // eslint-disable-line no-alert
         const fh = await dir.getFileHandle(name, { create: true });
         const w = await fh.createWritable();
         await w.write(blob); await w.close();
@@ -509,6 +515,87 @@ async function savePdf(blob, name) {
 function showMade(view) {
   const el = view.querySelector('#madeList');
   if (!el) return;
-  el.innerHTML = made.length ? `<h3>Created this session</h3><table><tr><th>File</th><th>Parent</th><th class="num">Total</th><th>Saved to</th></tr>
-    ${made.map(m => `<tr><td>${esc(m.name)}</td><td>${esc(m.parent)}</td><td class="num">${gbp(m.total)}</td><td class="small">${esc(m.where)}</td></tr>`).join('')}</table>` : '';
+  el.innerHTML = made.length ? `<h3>Created this session</h3><table><tr><th>File</th><th>Parent</th><th class="num">Total</th><th>Saved to</th><th>Emailed</th></tr>
+    ${made.map(m => `<tr><td>${esc(m.name)}</td><td>${esc(m.parent)}</td><td class="num">${gbp(m.total)}</td><td class="small">${esc(m.where)}</td><td class="small">${m.emailed ? '✅ ' + esc(m.emailed) : ''}</td></tr>`).join('')}</table>` : '';
+}
+
+// ── Email to the parent (Gmail) ───────────────────────────────
+
+export function emailText(v, c) {
+  const first = (v.parent || '').trim().split(/\s+/)[0];
+  const nums = String(v.number).split(/[\s,&#]+/).filter(Boolean).map(n => '#' + n).join(', ');
+  const kids = v.children.length > 1 ? v.children.slice(0, -1).join(', ') + ' and ' + v.children.at(-1) : v.children[0];
+  return {
+    subject: `Invoice / payment receipt ${nums} – ${c.name}`,
+    text: [
+      `Dear ${first || 'Parent'},`,
+      '',
+      `Please find attached your invoice / payment receipt ${nums} from ${c.name}` +
+        (kids ? ` for ${kids}` : '') + (v.careDates ? ` (${v.careDates})` : '') + '.',
+      '',
+      `Total paid: ${gbp(v.total)}`,
+      '',
+      'If you need anything else, just reply to this email.',
+      '',
+      'Kind regards,',
+      '',
+      c.signName,
+      c.signRole,
+      c.name,
+      c.phone,
+    ].join('\n'),
+  };
+}
+
+function emailDialog(view, doc, name, cl) {
+  if (!gmailConfigured()) return toast('Email isn’t set up yet (Google client ID missing).', 7000);
+  if (!cl.sendFrom) return toast(`Set “Email invoices from” for ${cl.label} under Invoice letterhead details first.`, 7000);
+  const v = current;
+  const t = emailText(v, cl);
+  dialog.innerHTML = `
+    <form method="dialog" class="stack" style="min-width:min(560px,100%)">
+      <h2>Email invoice to parent</h2>
+      <p class="small muted">Sent from <b>${esc(cl.sendFrom)}</b> through Gmail, with <b>${esc(name)}</b> attached. The PDF is also saved to your Invoice folder.</p>
+      <label>To<input name="to" type="email" value="${esc(v.email)}" required></label>
+      <label>Subject<input name="subject" value="${esc(t.subject)}" required></label>
+      <label>Message<textarea name="text" rows="14">${esc(t.text)}</textarea></label>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <button class="primary" value="send">✉️ Send</button>
+        <button value="cancel" formnovalidate>Cancel</button>
+      </div>
+      <p class="small muted" id="mailStatus"></p>
+    </form>`;
+  dialog.style.maxWidth = '640px';
+  dialog.showModal();
+  dialog.addEventListener('close', () => { dialog.style.maxWidth = ''; }, { once: true });
+  const form = dialog.querySelector('form');
+  const status = dialog.querySelector('#mailStatus');
+  form.onsubmit = async (ev) => {
+    if (ev.submitter?.value !== 'send') return;          // Cancel closes the dialog
+    ev.preventDefault();
+    const f = Object.fromEntries(new FormData(form));
+    if (!isEmail(f.to)) { status.textContent = 'Enter a valid email address.'; return; }
+    const btn = form.querySelector('[value=send]');
+    btn.disabled = true;
+    try {
+      status.textContent = 'Signing in to Google…';
+      const { token } = await gmailToken(cl.sendFrom);    // first, while the click still counts (Google pop-up)
+      status.textContent = 'Sending…';
+      await sendGmail({ token, from: cl.sendFrom, fromName: cl.name, to: f.to.trim(), subject: f.subject.trim(), text: f.text,
+        pdfBytes: new Uint8Array(doc.output('arraybuffer')), filename: name });
+      status.textContent = 'Sent. Saving a copy…';
+      let where = '';
+      try { where = await savePdf(doc.output('blob'), name, { quiet: true }) || 'not saved'; }
+      catch (e) { where = 'not saved (' + e.message + ')'; }
+      dialog.close();
+      made.unshift({ name, where, parent: v.parent, total: v.total, emailed: f.to.trim() });
+      showMade(view);
+      toast(`Emailed ${name} to ${f.to.trim()}`, 6000);
+      next(view);
+    } catch (e) {
+      console.error(e);
+      status.textContent = e.message || String(e);
+      btn.disabled = false;
+    }
+  };
 }

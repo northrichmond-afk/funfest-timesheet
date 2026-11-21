@@ -105,3 +105,10 @@ Choose the club (North Richmond or Hounslow), type one or more booking (order) n
 - Parent and child details are not stored by the timesheet app; they only go into the PDF.
 - Letterhead details (address, Ofsted number, signatory) can be changed per club under **Invoice letterhead details** (North Richmond Ofsted 2818035, Hounslow Ofsted 2909023).
 - PDF library: jsPDF 3 (MIT), vendored in `shared/vendor/`.
+
+### Emailing invoices to parents
+**Save & email parent** opens an email box (To = the parent's email from the order; subject and message editable), sends it through **Gmail** with the PDF attached, and saves a copy in the Invoice folder.
+
+- Each club sends from its own Google account. Set it once per club under **Invoice letterhead details › Email invoices from**. Google asks you to approve "Send email on your behalf" the first time in each browser session.
+- Google Cloud (project *Fun Fest Timesheet*): the **Gmail API** is enabled and the OAuth client allows `https://northrichmond-afk.github.io`. While the app's publishing status is *Testing*, every sending account must be listed under **Google Auth Platform › Audience › Test users**, and Google shows an "unverified app" screen (choose *Continue*).
+- The client ID in `shared/config.js` (`GOOGLE_CLIENT_ID`) is public by design; no secret is stored.
