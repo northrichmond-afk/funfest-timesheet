@@ -60,6 +60,10 @@ async function pending() {
 
 // ── Card on the Staff tab ─────────────────────────────────────
 
+// Automatic copying runs at most once per page load, so a file that keeps failing can't loop.
+let autoTried = false;
+let running = false;
+
 export async function staffFilesCard(el, staffList) {
   el.innerHTML = `<h2>Staff files → iCloud</h2><p class="small muted">Checking…</p>`;
   let p;
@@ -82,16 +86,25 @@ export async function staffFilesCard(el, staffList) {
     </div>
     <div id="sfLog" class="small"></div>`;
   const run = async (ask) => {
+    if (running) return;
     let r = await getRoot();
     if (!r) { if (!ask) return; r = await pickRoot(); if (!r) return; }
     if (!(await permission(r, ask))) { if (ask) toast('Folder permission wasn’t given.'); return; }
-    await syncAll(r, staffList, el.querySelector('#sfLog'));
-    staffFilesCard(el, staffList);
+    running = true;
+    const log = el.querySelector('#sfLog');
+    try { await syncAll(r, staffList, log); } finally { running = false; }
+    const keep = log?.innerHTML || '';
+    await staffFilesCard(el, staffList);
+    const again = el.querySelector('#sfLog');
+    if (again && keep) again.innerHTML = keep;   // keep the list of what was copied / what failed
   };
   el.querySelector('#sfPick')?.addEventListener('click', async () => { if (await pickRoot()) staffFilesCard(el, staffList); });
   el.querySelector('#sfSync')?.addEventListener('click', () => run(true));
   // Copy automatically when the folder is already allowed in this browser session
-  if (n && root && (await root.queryPermission({ mode: 'readwrite' })) === 'granted') run(false);
+  if (n && !autoTried && !running && root && (await root.queryPermission({ mode: 'readwrite' })) === 'granted') {
+    autoTried = true;
+    run(false);
+  }
 }
 
 async function syncAll(root, staffList, log) {
@@ -136,7 +149,7 @@ async function syncAll(root, staffList, log) {
       const doc = await detailsPdf(p, person);
       const name = detailsFileName(person);
       await write(f.h, name, doc.output('blob'));
-      const { error } = await sb.from('staff_profiles').update({ details_synced_at: new Date().toISOString() }).eq('staff_id', p.staff_id);
+      const { error } = await sb.from('staff_profiles').update({ details_synced_at: new Date(Math.max(Date.now(), Date.parse(p.updated_at) || 0) + 1000).toISOString() }).eq('staff_id', p.staff_id);
       if (error) throw error;
       say(`✅ ${esc(f.name)}/${esc(name)}`); ok++;
     } catch (e) { say(`❌ ${esc(person)}: details: ${esc(e.message)}`); bad++; }
