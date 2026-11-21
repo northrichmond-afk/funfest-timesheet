@@ -98,7 +98,7 @@ npm test             # hours calculation tests
 
 ## Admin tab: invoices from website orders
 
-Choose the club (North Richmond or Hounslow), type a booking (order) number or paste the order's WordPress link, and the app fetches it from that club's WordPress/WooCommerce site, shows the details for checking, and saves `INVOICE_<number>_NorthRichmond.pdf` / `INVOICE_<number>_Hounslow.pdf` in the chosen folder (iCloud Drive › FunFest › Invoice).
+Choose the club (North Richmond or Hounslow), type one or more booking (order) numbers separated by commas, or paste the order's WordPress link, and the app fetches it from that club's WordPress/WooCommerce site, shows the details for checking, and saves `INVOICE_<number>_NorthRichmond.pdf` / `INVOICE_<number>_Hounslow.pdf` in the chosen folder (iCloud Drive › FunFest › Invoice). With several numbers, choose **One invoice for all** (e.g. `INVOICE_5882_5946_Hounslow.pdf`) or **Separate invoices** (checked and saved one after another).
 
 - **One-time connection:** in WordPress admin go to **Users › Profile › Application Passwords**, add one called "Fun Fest Timesheet", then paste your WordPress username and that password into **Admin › Website connection**. The same login works for every club site. It's stored only in that browser on that computer, never in this repo or the database.
 - **Save folder:** click **Choose folder…** once and pick iCloud Drive › FunFest › Invoice. This needs Chrome or Edge on the Mac; Safari and phones download the PDF instead.
