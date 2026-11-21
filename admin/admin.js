@@ -682,10 +682,8 @@ async function reportTimesheets() {
 
 async function tabStaff() {
   await loadRef();
-  const pill = s => s.status === 'active' ? '<span class="pill ok">Active</span>' : s.status === 'invited' ? '<span class="pill warn">Invited</span>' : '<span class="pill bad">Left</span>';
   view.innerHTML = `
-    <div class="card" id="staffFiles"></div>
-    <div class="card" id="staffImport"></div>
+    <div class="card" id="staffList"></div>
     <div class="card">
       <h2>Add staff</h2>
       <p class="muted small">Use the email the person will sign in with: their <strong>Google account</strong>, or any email if they'll use a password. Only emails on this list can sign in.</p>
@@ -704,23 +702,8 @@ async function tabStaff() {
         <p><button id="bulkGo">Import</button></p>
       </details>
     </div>
-    <div class="card">
-      <h2>Staff (${state.staff.filter(s => s.status !== 'left').length} current)</h2>
-      <div class="table-wrap"><table id="staffTable">
-        <tr><th>Name</th><th>Login email</th><th>Phone</th><th>Role</th><th>Venue</th><th class="num">Rate</th><th>Status</th><th>Location consent</th><th>Last sign-in</th><th></th></tr>
-        ${state.staff.map(s => `<tr data-id="${s.id}">
-          <td>${esc(s.name)}</td><td class="small">${esc(s.email)}</td><td class="small">${esc(s.phone || '')}</td>
-          <td>${s.role === 'admin' ? '<span class="pill info">Admin</span>' : 'Staff'}</td>
-          <td>${esc(s.default_site_id ? siteName(s.default_site_id) : '')}</td><td class="num">${s.hourly_rate ? '£' + Number(s.hourly_rate).toFixed(2) : ''}</td>
-          <td>${pill(s)}</td><td class="small">${s.consent_location_at ? '✓ ' + localDate(s.consent_location_at) : '—'}</td>
-          <td class="small">${s.last_login_at ? dayLabel(localDate(s.last_login_at)) : 'Never'}</td>
-          <td><div class="actions">
-            ${s.status !== 'left' ? `<button data-inv="${s.id}">Invite</button>` : ''}
-            <button data-ed="${s.id}">Edit</button>
-            <button data-det="${s.id}">Details &amp; files</button>
-          </div></td></tr>`).join('')}
-      </table></div>
-    </div>`;
+    <div class="card" id="staffFiles"></div>
+    <div class="card" id="staffImport"></div>`;
 
   document.getElementById('add').onsubmit = async (ev) => {
     ev.preventDefault();
@@ -741,12 +724,47 @@ async function tabStaff() {
     toast(error ? error.message : `Imported ${rows.length} staff`);
     tabStaff();
   };
-  view.querySelectorAll('[data-inv]').forEach(b => b.onclick = () => invite(state.staff.find(s => s.id === b.dataset.inv)));
-  view.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => editStaff(state.staff.find(s => s.id === b.dataset.ed)));
-  view.querySelectorAll('[data-det]').forEach(b => b.onclick = () => openStaffDetails(dlg, state.staff.find(s => s.id === b.dataset.det), { siteName }));
+  renderStaffList();
   staffFilesCard(document.getElementById('staffFiles'), state.staff);
   importCard(document.getElementById('staffImport'), async () => { await loadRef(); staffFilesCard(document.getElementById('staffFiles'), state.staff); });
 
+}
+
+// Staff list split into tabs: Admin, Active, Inactive (left), Invited
+const STAFF_GROUPS = [
+  ['admin', 'Admin', s => s.role === 'admin' && s.status !== 'left'],
+  ['active', 'Active', s => s.role !== 'admin' && s.status === 'active'],
+  ['inactive', 'Inactive', s => s.status === 'left'],
+  ['invited', 'Invited', s => s.role !== 'admin' && s.status === 'invited'],
+];
+let staffGroup = 'active';
+
+function renderStaffList() {
+  const box = document.getElementById('staffList');
+  if (!box) return;
+  const [, label, test] = STAFF_GROUPS.find(g => g[0] === staffGroup);
+  const list = state.staff.filter(test);
+  const pill = s => s.status === 'active' ? '<span class="pill ok">Active</span>' : s.status === 'invited' ? '<span class="pill warn">Invited</span>' : '<span class="pill bad">Inactive</span>';
+  box.innerHTML = `
+    <div class="subtabs">${STAFF_GROUPS.map(([k, l, t]) => `<button data-sg="${k}" class="${k === staffGroup ? 'active' : ''}">${l} <span class="small">(${state.staff.filter(t).length})</span></button>`).join('')}</div>
+    ${list.length ? `<div class="table-wrap"><table id="staffTable">
+      <tr><th>Name</th><th>Login email</th><th>Phone</th><th>Role</th><th>Venue</th><th class="num">Rate</th><th>Status</th><th>Location consent</th><th>Last sign-in</th><th></th></tr>
+      ${list.map(s => `<tr data-id="${s.id}">
+        <td>${esc(s.name)}</td><td class="small">${esc(s.email)}</td><td class="small">${esc(s.phone || '')}</td>
+        <td>${s.role === 'admin' ? '<span class="pill info">Admin</span>' : 'Staff'}</td>
+        <td>${esc(s.default_site_id ? siteName(s.default_site_id) : '')}</td><td class="num">${s.hourly_rate ? '£' + Number(s.hourly_rate).toFixed(2) : ''}</td>
+        <td>${pill(s)}</td><td class="small">${s.consent_location_at ? '✓ ' + localDate(s.consent_location_at) : '—'}</td>
+        <td class="small">${s.last_login_at ? dayLabel(localDate(s.last_login_at)) : 'Never'}</td>
+        <td><div class="actions">
+          ${s.status !== 'left' ? `<button data-inv="${s.id}">Invite</button>` : ''}
+          <button data-ed="${s.id}">Edit</button>
+          <button data-det="${s.id}">Details &amp; files</button>
+        </div></td></tr>`).join('')}
+    </table></div>` : `<p class="muted">No ${label.toLowerCase()} staff.</p>`}`;
+  box.querySelectorAll('[data-sg]').forEach(b => b.onclick = () => { staffGroup = b.dataset.sg; renderStaffList(); });
+  box.querySelectorAll('[data-inv]').forEach(b => b.onclick = () => invite(state.staff.find(s => s.id === b.dataset.inv)));
+  box.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => editStaff(state.staff.find(s => s.id === b.dataset.ed)));
+  box.querySelectorAll('[data-det]').forEach(b => b.onclick = () => openStaffDetails(dlg, state.staff.find(s => s.id === b.dataset.det), { siteName }));
 }
 
 function inviteText(s) {
