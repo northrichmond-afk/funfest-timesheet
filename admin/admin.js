@@ -487,7 +487,7 @@ const repFilter = { from: addDays(mondayOf(today()), -7), to: addDays(mondayOf(t
 
 // ── Reports (sub-tabs: Timesheets, Staff list) ───────────────
 
-const REPORTS = [['timesheets', 'Timesheets'], ['stafflist', 'Staff list']];
+const REPORTS = [['timesheets', 'Timesheets'], ['stafflist', 'Staff list'], ['nodbs', 'Missing DBS']];
 let reportTab = 'timesheets';
 function reportTabsHTML() {
   return `<div class="subtabs">${REPORTS.map(([k, l]) => `<button data-rt="${k}" class="${reportTab === k ? 'active' : ''}">${l}</button>`).join('')}</div>`;
@@ -497,7 +497,7 @@ function wireReportTabs() {
 }
 function tabReports() {
   view.innerHTML = '<p class="center muted">Loading…</p>';
-  return reportTab === 'stafflist' ? reportStaffList() : reportTimesheets();
+  return reportTab === 'stafflist' ? reportStaffList() : reportTab === 'nodbs' ? reportMissingDbs() : reportTimesheets();
 }
 
 const staffListFilter = { status: 'current', q: '' };
@@ -557,6 +557,63 @@ async function reportStaffList() {
   ]));
   $('slPrint').onclick = () => window.print();
   view.querySelectorAll('[data-sl]').forEach(b => b.onclick = () => openStaffDetails(dlg, rows[+b.dataset.sl].s, { siteName }));
+}
+
+// Staff with no DBS certificate number and no Update Service ID
+const noDbsFilter = { status: 'current' };
+async function reportMissingDbs() {
+  await loadRef();
+  const [{ data: profiles, error }, { data: docs }] = await Promise.all([
+    sb.from('staff_profiles').select('staff_id, phone, personal_email, dbs_certificate_number, dbs_update_service, dbs_update_service_number'),
+    sb.from('staff_documents').select('staff_id, kind, uploaded_at').ilike('kind', '%dbs%'),
+  ]);
+  const prof = Object.fromEntries((profiles || []).map(p => [p.staff_id, p]));
+  const dbsDocs = {};
+  for (const d of docs || []) (dbsDocs[d.staff_id] ??= []).push(d);
+  const f = noDbsFilter;
+  const rows = state.staff
+    .filter(s => s.role !== 'admin' || f.status === 'all')
+    .filter(s => f.status === 'all' || (f.status === 'current' ? s.status !== 'left' : s.status === f.status))
+    .filter(s => { const p = prof[s.id] || {}; return !p.dbs_certificate_number && !p.dbs_update_service_number; })
+    .map(s => {
+      const p = prof[s.id] || {};
+      const d = dbsDocs[s.id] || [];
+      return { s, phone: p.phone || s.phone || '', personal: p.personal_email || '', updateNoId: !!p.dbs_update_service, docs: d.length };
+    });
+  const total = state.staff.filter(s => s.role !== 'admin' && s.status !== 'left').length;
+  view.innerHTML = `${reportTabsHTML()}
+    <div class="card">
+      <h2>Staff without a DBS reference</h2>
+      ${error ? `<div class="msg warn small">${esc(error.message)}</div>` : ''}
+      <div class="toolbar">
+        <label>Show<select id="ndStatus">${[['current', 'Current (not left)'], ['active', 'Active'], ['invited', 'Invited'], ['all', 'Everyone (incl. admins and leavers)']]
+          .map(([v, l]) => `<option value="${v}" ${f.status === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <button id="ndCsv">⬇️ CSV</button>
+        <button id="ndPrint">🖨 Print</button>
+      </div>
+      <p class="small">${rows.length ? `<span class="pill warn">${rows.length}</span> ${rows.length === 1 ? 'person has' : 'people have'} no DBS certificate number or Update Service ID${f.status === 'current' ? ` (of ${total} current staff)` : ''}.`
+        : '✅ Everyone has a DBS reference.'}</p>
+      ${rows.length ? `<div class="table-wrap"><table>
+        <tr><th>Name</th><th>Status</th><th>Email</th><th>Phone</th><th>DBS file uploaded?</th><th></th></tr>
+        ${rows.map((r, i) => `<tr>
+          <td>${esc(r.s.name)}</td>
+          <td>${r.s.status === 'active' ? '<span class="pill ok">Active</span>' : r.s.status === 'invited' ? '<span class="pill warn">Invited</span>' : '<span class="pill bad">Inactive</span>'}</td>
+          <td class="small">${esc(r.s.email)}${r.personal && r.personal.toLowerCase() !== r.s.email.toLowerCase() ? `<div class="muted">${esc(r.personal)}</div>` : ''}</td>
+          <td class="small">${esc(r.phone)}</td>
+          <td class="small">${r.docs ? `Yes (${r.docs}): number not entered` : r.updateNoId ? 'On Update Service, ID not entered' : '—'}</td>
+          <td><button class="small" data-nd="${i}">Details</button></td></tr>`).join('')}
+      </table></div>
+      <p class="small muted">Add the number under <b>Details › Edit</b>, or ask the person to enter it in the staff app under <b>My details</b>.</p>` : ''}
+    </div>`;
+  wireReportTabs();
+  const $ = id => document.getElementById(id);
+  $('ndStatus').onchange = () => { f.status = $('ndStatus').value; reportMissingDbs(); };
+  $('ndCsv').onclick = () => download(`funfest-missing-dbs-${today()}.csv`, toCSV([
+    ['Name', 'Status', 'Login email', 'Personal email', 'Phone', 'DBS file uploaded'],
+    ...rows.map(r => [r.s.name, r.s.status, r.s.email, r.personal, r.phone, r.docs ? 'Yes' : 'No']),
+  ]));
+  $('ndPrint').onclick = () => window.print();
+  view.querySelectorAll('[data-nd]').forEach(b => b.onclick = () => openStaffDetails(dlg, rows[+b.dataset.nd].s, { siteName }));
 }
 
 async function reportTimesheets() {
