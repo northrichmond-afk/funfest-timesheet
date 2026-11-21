@@ -3,6 +3,7 @@ import { renderLogin, renderNewPassword } from '../shared/login.js';
 import { calcEntry, fmtHours, decimalHours, localDate, localTime, londonDateTime, toCSV } from '../shared/hours.js';
 import { esc, toast, download, setRoleTitle } from '../shared/ui.js';
 import { staffMatches } from '../shared/search.js';
+import { tabAdmin } from './invoice.js';
 
 const view = document.getElementById('view');
 const dlg = document.getElementById('dlg');
@@ -87,7 +88,7 @@ function go(tab) {
   document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   view.innerHTML = '<p class="center muted">Loading…</p>';
   ({ today: tabToday, rota: tabRota, entries: tabEntries, requests: tabRequests, reports: tabReports,
-     staff: tabStaff, sites: tabSites, settings: tabSettings }[tab] || tabToday)();
+     staff: tabStaff, sites: tabSites, settings: tabSettings, admin: () => tabAdmin(view, dlg) }[tab] || tabToday)();
 }
 
 // ── Today ────────────────────────────────────────────────────
