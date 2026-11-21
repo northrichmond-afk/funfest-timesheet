@@ -1,8 +1,8 @@
 // Caches the app shell so it opens without signal. Never caches Supabase API calls.
-const CACHE = 'ff-shell-v11';
+const CACHE = 'ff-shell-v12';
 const SHELL = [
-  './', './index.html', './app.js', './details.js', './app.css', './manifest.webmanifest', './icon-192.png', './apple-touch-icon.png',
-  '../shared/styles.css', '../shared/config.js', '../shared/supabase.js', '../shared/hours.js', '../shared/ui.js', '../shared/search.js', '../shared/login.js', '../shared/native.js', '../shared/staffdetails.js', '../shared/brand/fun-fest-logo.png', '../shared/brand/favicon.png',
+  './', './index.html', './app.js', './details.js', './accident.js', './app.css', './manifest.webmanifest', './icon-192.png', './apple-touch-icon.png',
+  '../shared/styles.css', '../shared/config.js', '../shared/supabase.js', '../shared/hours.js', '../shared/ui.js', '../shared/search.js', '../shared/login.js', '../shared/native.js', '../shared/staffdetails.js', '../shared/accidents.js', '../shared/brand/fun-fest-logo.png', '../shared/brand/favicon.png',
   '../shared/fonts/gochi-hand-latin-400-normal.woff2', '../shared/fonts/open-sans-latin-400-normal.woff2',
   '../shared/fonts/open-sans-latin-600-normal.woff2', '../shared/fonts/open-sans-latin-700-normal.woff2',
   '../shared/fonts/catamaran-latin-600-normal.woff2', '../shared/fonts/catamaran-latin-800-normal.woff2',

@@ -5,6 +5,7 @@ import { esc, toast, download, setRoleTitle } from '../shared/ui.js';
 import { staffMatches } from '../shared/search.js';
 import { tabAdmin } from './invoice.js';
 import { criticalIssues } from '../shared/staffdetails.js';
+import { accidentsPane, attendancePane } from './today.js';
 import { staffFilesCard, openStaffDetails } from './stafffiles.js';
 import { importCard } from './staffimport.js';
 
@@ -96,7 +97,25 @@ function go(tab) {
 
 // ── Today ────────────────────────────────────────────────────
 
+// ── Today (sub-tabs: Shifts, Accident forms, Attending children) ──
+const TODAY_TABS = [['shifts', 'Staff shifts'], ['accidents', 'Accident forms'], ['children', 'Attending children']];
+let todayTab = 'shifts';
+function todayTabsHTML() {
+  return `<div class="subtabs">${TODAY_TABS.map(([k, l]) => `<button data-tt="${k}" class="${todayTab === k ? 'active' : ''}">${l}</button>`).join('')}</div>`;
+}
+function wireTodayTabs() {
+  view.querySelectorAll('[data-tt]').forEach(b => b.onclick = () => { todayTab = b.dataset.tt; tabToday(); });
+}
 async function tabToday() {
+  if (todayTab === 'shifts') return todayShifts();
+  view.innerHTML = `${todayTabsHTML()}<div id="todayPane"><p class="center muted">Loading…</p></div>`;
+  wireTodayTabs();
+  const ctx = { dlg, me: state.me, staffName };
+  const pane = document.getElementById('todayPane');
+  return todayTab === 'accidents' ? accidentsPane(pane, ctx) : attendancePane(pane, ctx);
+}
+
+async function todayShifts() {
   const d = today();
   const [from, to] = rangeTs(d, d);
   const [{ data: open }, { data: plans }, { data: done }] = await Promise.all([
@@ -108,7 +127,7 @@ async function tabToday() {
   const nowLocal = localTime(new Date());
   const notIn = (plans || []).filter(p => !startedIds.has(p.staff_id));
 
-  view.innerHTML = `
+  view.innerHTML = `${todayTabsHTML()}
     <div class="card">
       <h2>Find staff</h2>
       <form id="search" class="toolbar" role="search">
@@ -143,6 +162,7 @@ async function tabToday() {
           <td>${p.expected_start.slice(0,5) < nowLocal ? '<span class="pill bad">Late</span>' : ''}</td></tr>`).join('')}</table>`
         : '<p class="muted">Everyone planned today has started.</p>'}
     </div>`;
+  wireTodayTabs();
   view.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => editEntry(open.find(e => e.id === b.dataset.edit), tabToday));
 
   // ── Staff search: details plus where each person is today ──

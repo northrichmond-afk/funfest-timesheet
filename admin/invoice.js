@@ -44,7 +44,7 @@ export const CLUB_DEFAULTS = CLUBS.northrichmond;
 
 const getJSON = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) || d; } catch { return d; } };
 const setJSON = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private mode */ } };
-const conn = () => ({ user: '', pass: '', ...getJSON(LS_CONN, {}) });
+export const conn = () => ({ user: '', pass: '', ...getJSON(LS_CONN, {}) });
 let clubId = (() => { try { return CLUBS[localStorage.getItem(LS_SEL)] ? localStorage.getItem(LS_SEL) : 'northrichmond'; } catch { return 'northrichmond'; } })();
 const club = (id = clubId) => ({ ...CLUBS[id], ...getJSON(LS_CLUB + id, {}), id });
 
@@ -146,7 +146,7 @@ export function tabAdmin(view, dlg) {
 
 // ── WooCommerce ───────────────────────────────────────────────
 
-async function wc(path, base = club().base) {
+export async function wc(path, base = club().base) {
   const c = conn();
   if (!c.user || !c.pass) throw new Error('Set up the website connection first (bottom of this page).');
   let r;
