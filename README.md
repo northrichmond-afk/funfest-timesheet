@@ -10,7 +10,7 @@ Staff clock in and out on their phones. The app checks they're at the venue usin
 | Folder | What it is |
 |---|---|
 | `app/` | Staff phone app (installable PWA): Google sign-in, location notice, Start/End shift, My hours, request a change, works offline |
-| `admin/` | Admin pages: Today, Rota, Timesheets, Requests, Reports, Staff, Venues, Settings |
+| `admin/` | Admin pages: Today, Rota, Timesheets, Requests, Reports, Staff, Venues, Settings, Admin (invoices from website orders) |
 | `shared/` | Supabase connection, hours calculation, styles |
 | `supabase/schema.sql` | Database tables, security rules and functions, with the first admin seeded |
 | `.github/workflows/pages.yml` | Runs tests and publishes the site to GitHub Pages on every push to `main` |
@@ -95,3 +95,13 @@ No build step for the website: it's plain HTML and JavaScript. The iPhone app pa
 npm run serve        # http://localhost:8080/app/  (add http://localhost:8080/** to Supabase redirect URLs)
 npm test             # hours calculation tests
 ```
+
+## Admin tab: invoices from website orders
+
+Type a booking (order) number and the app fetches it from the North Richmond WordPress/WooCommerce site, shows the details for checking, and saves `INVOICE_<number>_NorthRichmond.pdf` in the chosen folder (iCloud Drive › FunFest › Invoice).
+
+- **One-time connection:** in WordPress admin go to **Users › Profile › Application Passwords**, add one called "Fun Fest Timesheet", then paste your WordPress username and that password into **Admin › Website connection**. It's stored only in that browser on that computer, never in this repo or the database.
+- **Save folder:** click **Choose folder…** once and pick iCloud Drive › FunFest › Invoice. This needs Chrome or Edge on the Mac; Safari and phones download the PDF instead.
+- Parent and child details are not stored by the timesheet app; they only go into the PDF.
+- Letterhead details (address, Ofsted number, signatory) can be changed under **Invoice letterhead details**.
+- PDF library: jsPDF 3 (MIT), vendored in `shared/vendor/`.
