@@ -12,30 +12,49 @@
 import { esc, toast } from '../shared/ui.js';
 import { extractInvoice, invoiceFileName, longDate, gbp } from '../shared/invoice.js';
 
-const LS_CONN = 'ff.invoice.wc';      // { base, user, pass }
-const LS_CLUB = 'ff.invoice.club';    // overrides for CLUB_DEFAULTS
+const LS_CONN = 'ff.invoice.wc';      // { user, pass } – one WordPress login works for every club site
+const LS_CLUB = 'ff.invoice.club.';   // + club id: overrides for CLUBS[id]
+const LS_SEL = 'ff.invoice.selected'; // last club used
 const DB = 'ff-invoice', STORE = 'handles', DIR_KEY = 'invoiceDir';
 const FOLDER_HINT = 'iCloud Drive › FunFest › Invoice';
 
-export const CLUB_DEFAULTS = {
-  fileTag: 'NorthRichmond',
-  name: 'Fun Fest North Richmond',
-  premises: "King's C of E, Cumberland Road, Richmond, TW9 3HJ",
+const COMMON = {
   phone: '07545 331344',
   email: '',
-  ofsted: '2818035',
   settingRef: '',
   company: 'Vadivu Fun Fest Club Ltd',
   companyNo: '12924442',
   signName: 'Sugitha Mukunthan',
   signRole: 'Club Owner / Manager',
 };
-const DEFAULT_BASE = 'https://fun-fest.co.uk/northrichmond';
+// Each club is its own WordPress site in the Fun Fest network (same login for all)
+export const CLUBS = {
+  northrichmond: {
+    ...COMMON, label: 'North Richmond', base: 'https://fun-fest.co.uk/northrichmond', fileTag: 'NorthRichmond',
+    name: 'Fun Fest North Richmond', premises: "King's C of E, Cumberland Road, Richmond, TW9 3HJ", ofsted: '2818035',
+  },
+  hounslow: {
+    ...COMMON, label: 'Hounslow', base: 'https://fun-fest.co.uk/hounslow', fileTag: 'Hounslow',
+    name: 'Fun Fest Hounslow', premises: 'The Rosary Catholic Primary School, 10 The Green, Heston, TW5 0RL', ofsted: '2909023',
+  },
+};
+export const CLUB_DEFAULTS = CLUBS.northrichmond;
 
 const getJSON = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) || d; } catch { return d; } };
 const setJSON = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private mode */ } };
-const conn = () => ({ base: DEFAULT_BASE, user: '', pass: '', ...getJSON(LS_CONN, {}) });
-const club = () => ({ ...CLUB_DEFAULTS, ...getJSON(LS_CLUB, {}) });
+const conn = () => ({ user: '', pass: '', ...getJSON(LS_CONN, {}) });
+let clubId = (() => { try { return CLUBS[localStorage.getItem(LS_SEL)] ? localStorage.getItem(LS_SEL) : 'northrichmond'; } catch { return 'northrichmond'; } })();
+const club = (id = clubId) => ({ ...CLUBS[id], ...getJSON(LS_CLUB + id, {}), id });
+
+// Accepts "5951", "#5951", or a pasted WordPress order link such as
+// https://fun-fest.co.uk/hounslow/wp-admin/admin.php?page=wc-orders&action=edit&id=5951
+export function parseOrderInput(text) {
+  const t = String(text || '').trim();
+  const m = t.match(/fun-fest\.co\.uk\/([a-z0-9-]+)\/.*?[?&](?:id|post)=(\d+)/i);
+  if (m) return { club: CLUBS[m[1].toLowerCase()] ? m[1].toLowerCase() : null, num: m[2] };
+  const n = t.replace(/^#/, '');
+  return /^\d+$/.test(n) ? { club: null, num: n } : null;
+}
 
 let current = null;           // invoice fields being edited
 const made = [];              // invoices created this session
@@ -44,15 +63,17 @@ const made = [];              // invoices created this session
 
 export function tabAdmin(view, dlg) {
   const c = conn();
+  const cl = club();
   view.innerHTML = `
     <div class="card">
       <h2>Create an invoice</h2>
-      <p class="small muted">Enter the booking (order) number from the website. The details are fetched from
-        <a href="${esc(c.base)}/wp-admin/index.php" target="_blank" rel="noopener">the North Richmond WordPress admin</a>,
+      <p class="small muted">Choose the club and enter the booking (order) number, or paste the order's link from WordPress.
+        The details are fetched from <a href="${esc(cl.base)}/wp-admin/admin.php?page=wc-orders" target="_blank" rel="noopener">the ${esc(cl.label)} WordPress admin</a>,
         you check them, and the PDF is saved to <b>${FOLDER_HINT}</b>.</p>
       ${c.user && c.pass ? '' : `<div class="msg warn">First connect to WordPress: see <b>Website connection</b> below.</div>`}
       <form id="invFind" class="toolbar">
-        <label>Invoice / order number<input name="num" inputmode="numeric" required placeholder="e.g. 5735" autocomplete="off" style="width:160px"></label>
+        <label>Club<select name="club">${Object.entries(CLUBS).map(([id, k]) => `<option value="${id}" ${id === clubId ? 'selected' : ''}>${esc(k.label)}</option>`).join('')}</select></label>
+        <label>Invoice / order number<input name="num" required placeholder="e.g. 2930 or paste link" autocomplete="off" style="width:220px"></label>
         <button class="primary">Get order details</button>
       </form>
       <div id="invForm"></div>
@@ -72,7 +93,7 @@ export function tabAdmin(view, dlg) {
     <details class="card">
       <summary><b>Website connection</b> <span class="small muted">${c.user && c.pass ? `connected as ${esc(c.user)}` : 'not set up'}</span></summary>
       <form id="invConn" class="stack" style="max-width:520px;margin-top:.8rem">
-        <label>WordPress site<input name="base" value="${esc(c.base)}" required></label>
+        <p class="small muted">One login is used for all the club sites (${Object.values(CLUBS).map(k => esc(k.label)).join(', ')}).</p>
         <label>WordPress username (or WooCommerce consumer key <code>ck_…</code>)<input name="user" value="${esc(c.user)}" autocomplete="off" required></label>
         <label>Application password (or consumer secret <code>cs_…</code>)<input name="pass" type="password" value="${esc(c.pass)}" autocomplete="new-password" required></label>
         <p class="small muted">To get an application password: WordPress admin › <b>Users › Profile</b> › <b>Application Passwords</b>,
@@ -83,29 +104,37 @@ export function tabAdmin(view, dlg) {
     </details>
 
     <details class="card">
-      <summary><b>Invoice letterhead details</b></summary>
+      <summary><b>Invoice letterhead details: ${esc(cl.label)}</b> <span class="small muted">(switch club above to edit the other)</span></summary>
       <form id="invClub" class="stack" style="max-width:520px;margin-top:.8rem">
         ${Object.entries({ name: 'Club name', premises: 'Premises address', phone: 'Phone', email: 'Email (optional)', ofsted: 'Ofsted registration number',
           settingRef: 'Setting reference / URN (optional)', company: 'Company name', companyNo: 'Company registration number',
           signName: 'Signed by', signRole: 'Role', fileTag: 'File name tag (INVOICE_<no>_<tag>.pdf)' })
-          .map(([k, l]) => `<label>${esc(l)}<input name="${k}" value="${esc(club()[k])}"></label>`).join('')}
+          .map(([k, l]) => `<label>${esc(l)}<input name="${k}" value="${esc(cl[k])}"></label>`).join('')}
         <div style="display:flex;gap:.5rem"><button class="primary">Save</button><button type="button" id="clubReset">Reset to defaults</button></div>
       </form>
     </details>`;
 
-  view.querySelector('#invFind').onsubmit = (ev) => { ev.preventDefault(); fetchOrder(view, ev.target.num.value.trim().replace(/^#/, '')); };
+  const setClub = (id) => { clubId = id; try { localStorage.setItem(LS_SEL, id); } catch { /* ignore */ } };
+  view.querySelector('#invFind [name=club]').onchange = (ev) => { setClub(ev.target.value); current = null; tabAdmin(view, dlg); };
+  view.querySelector('#invFind').onsubmit = (ev) => {
+    ev.preventDefault();
+    const p = parseOrderInput(ev.target.num.value);
+    if (!p) return toast('Enter the order number (digits) or paste the order link.');
+    if (p.club && p.club !== clubId) { setClub(p.club); current = null; tabAdmin(view, dlg); view.querySelector('#invFind [name=num]').value = p.num; }
+    fetchOrder(view, p.num);
+  };
   view.querySelector('#invConn').onsubmit = async (ev) => {
     ev.preventDefault();
     const f = Object.fromEntries(new FormData(ev.target));
-    setJSON(LS_CONN, { base: f.base.trim().replace(/\/wp-admin.*$/, '').replace(/\/+$/, ''), user: f.user.trim(), pass: f.pass.trim() });
+    setJSON(LS_CONN, { user: f.user.trim(), pass: f.pass.trim() });
     try { await wc('/wp-json/wc/v3/orders?per_page=1'); toast('Connected to WordPress ✓'); tabAdmin(view, dlg); }
     catch (e) { toast(e.message, 8000); }
   };
   view.querySelector('#connForget').onclick = () => { localStorage.removeItem(LS_CONN); toast('Connection removed from this browser'); tabAdmin(view, dlg); };
   view.querySelector('#invClub').onsubmit = (ev) => {
-    ev.preventDefault(); setJSON(LS_CLUB, Object.fromEntries(new FormData(ev.target))); toast('Saved');
+    ev.preventDefault(); setJSON(LS_CLUB + clubId, Object.fromEntries(new FormData(ev.target))); toast('Saved');
   };
-  view.querySelector('#clubReset').onclick = () => { localStorage.removeItem(LS_CLUB); tabAdmin(view, dlg); };
+  view.querySelector('#clubReset').onclick = () => { localStorage.removeItem(LS_CLUB + clubId); tabAdmin(view, dlg); };
   view.querySelector('#pickDir').onclick = async () => { await pickFolder(); showDir(view); };
   showDir(view);
   showMade(view);
@@ -114,12 +143,12 @@ export function tabAdmin(view, dlg) {
 
 // ── WooCommerce ───────────────────────────────────────────────
 
-async function wc(path) {
+async function wc(path, base = club().base) {
   const c = conn();
   if (!c.user || !c.pass) throw new Error('Set up the website connection first (bottom of this page).');
   let r;
   try {
-    r = await fetch(c.base + path, { headers: { Authorization: 'Basic ' + btoa(unescape(encodeURIComponent(`${c.user}:${c.pass}`))) }, cache: 'no-store' });
+    r = await fetch(base + path, { headers: { Authorization: 'Basic ' + btoa(unescape(encodeURIComponent(`${c.user}:${c.pass}`))) }, cache: 'no-store' });
   } catch {
     throw new Error("Couldn't reach the website. Check your internet connection and the site address.");
   }
@@ -132,7 +161,6 @@ async function wc(path) {
 }
 
 async function fetchOrder(view, num) {
-  if (!/^\d+$/.test(num)) return toast('Enter the order number (digits only).');
   const box = view.querySelector('#invForm');
   box.innerHTML = '<p class="muted">Fetching order…</p>';
   try {
@@ -146,7 +174,7 @@ async function fetchOrder(view, num) {
       if (!order) throw e;
     }
     const inv = extractInvoice(order);
-    current = { ...inv, invoiceDate: new Date().toISOString().slice(0, 10) };
+    current = { ...inv, club: clubId, invoiceDate: new Date().toISOString().slice(0, 10) };
     renderForm(view);
   } catch (e) {
     box.innerHTML = `<div class="msg bad">${esc(e.message)}</div>`;
@@ -165,7 +193,7 @@ function renderForm(view) {
       <td class="num"><input name="amt${i}" type="number" step="0.01" value="${it.amount.toFixed(2)}" style="width:100px"></td></tr>`).join('');
   box.innerHTML = `
     <hr>
-    <h3>Order #${esc(v.number)} ${PAID.includes(v.status) ? `<span class="pill ok">${esc(v.status)}</span>` : `<span class="pill warn">${esc(v.status || 'unknown')}: not marked paid</span>`}</h3>
+    <h3>${esc(CLUBS[v.club]?.label || '')} order #${esc(v.number)} ${PAID.includes(v.status) ? `<span class="pill ok">${esc(v.status)}</span>` : `<span class="pill warn">${esc(v.status || 'unknown')}: not marked paid</span>`}</h3>
     <form id="invEdit" class="stack" style="max-width:760px">
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.6rem">
         <label>Invoice date<input name="invoiceDate" type="date" value="${esc(v.invoiceDate)}" required></label>
@@ -200,8 +228,9 @@ function renderForm(view) {
     readForm(form);
     const action = ev.submitter?.value || 'save';
     try {
-      const doc = await buildPdf(current, club());
-      const name = invoiceFileName(current.number, club().fileTag);
+      const cl = club(current.club);
+      const doc = await buildPdf(current, cl);
+      const name = invoiceFileName(current.number, cl.fileTag);
       if (action === 'preview') { window.open(doc.output('bloburl'), '_blank'); return; }
       const where = await savePdf(doc.output('blob'), name);
       if (!where) return;

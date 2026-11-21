@@ -70,3 +70,15 @@ test('date helpers', () => {
   assert.equal(shortDate('2026-12-21'), 'Mon 21 Dec 2026');
   assert.equal(invoiceFileName('2930'), 'INVOICE_2930_NorthRichmond.pdf');
 });
+
+test('order input: number, #number, or a pasted WordPress order link picks the club', async () => {
+  globalThis.localStorage ??= { getItem: () => null, setItem() {} };
+  const { parseOrderInput, CLUBS } = await import('../admin/invoice.js');
+  assert.deepEqual(parseOrderInput('2930'), { club: null, num: '2930' });
+  assert.deepEqual(parseOrderInput(' #2930 '), { club: null, num: '2930' });
+  assert.deepEqual(parseOrderInput('https://fun-fest.co.uk/hounslow/wp-admin/admin.php?page=wc-orders&action=edit&id=5951'), { club: 'hounslow', num: '5951' });
+  assert.deepEqual(parseOrderInput('https://fun-fest.co.uk/northrichmond/wp-admin/post.php?post=2930&action=edit'), { club: 'northrichmond', num: '2930' });
+  assert.equal(parseOrderInput('abc'), null);
+  assert.equal(CLUBS.hounslow.ofsted, '2909023');
+  assert.equal(CLUBS.northrichmond.ofsted, '2818035');
+});

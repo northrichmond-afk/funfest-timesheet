@@ -98,10 +98,10 @@ npm test             # hours calculation tests
 
 ## Admin tab: invoices from website orders
 
-Type a booking (order) number and the app fetches it from the North Richmond WordPress/WooCommerce site, shows the details for checking, and saves `INVOICE_<number>_NorthRichmond.pdf` in the chosen folder (iCloud Drive › FunFest › Invoice).
+Choose the club (North Richmond or Hounslow), type a booking (order) number or paste the order's WordPress link, and the app fetches it from that club's WordPress/WooCommerce site, shows the details for checking, and saves `INVOICE_<number>_NorthRichmond.pdf` / `INVOICE_<number>_Hounslow.pdf` in the chosen folder (iCloud Drive › FunFest › Invoice).
 
-- **One-time connection:** in WordPress admin go to **Users › Profile › Application Passwords**, add one called "Fun Fest Timesheet", then paste your WordPress username and that password into **Admin › Website connection**. It's stored only in that browser on that computer, never in this repo or the database.
+- **One-time connection:** in WordPress admin go to **Users › Profile › Application Passwords**, add one called "Fun Fest Timesheet", then paste your WordPress username and that password into **Admin › Website connection**. The same login works for every club site. It's stored only in that browser on that computer, never in this repo or the database.
 - **Save folder:** click **Choose folder…** once and pick iCloud Drive › FunFest › Invoice. This needs Chrome or Edge on the Mac; Safari and phones download the PDF instead.
 - Parent and child details are not stored by the timesheet app; they only go into the PDF.
-- Letterhead details (address, Ofsted number, signatory) can be changed under **Invoice letterhead details**.
+- Letterhead details (address, Ofsted number, signatory) can be changed per club under **Invoice letterhead details** (North Richmond Ofsted 2818035, Hounslow Ofsted 2909023).
 - PDF library: jsPDF 3 (MIT), vendored in `shared/vendor/`.
