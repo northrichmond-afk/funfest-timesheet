@@ -26,16 +26,14 @@ test('checks NI, DBS and Update Service numbers', () => {
   assert.equal(checkDetails({ ni_number: 'XX123' }).length, 1);
   assert.equal(checkDetails({ dbs_certificate_number: '12345' }).length, 1);
   assert.equal(checkDetails({ dbs_update_service: true }).length, 1);
-  assert.equal(checkDetails({ declaration_agreed: true }).length, 1);
 });
 
-test('form covers the application form fields plus DBS, and escapes values', () => {
+test('form has personal details, qualifications/training and DBS only, and escapes values', () => {
   const keys = ALL_FIELDS.map(f => f[0]);
-  for (const k of ['full_name', 'address', 'ni_number', 'current_employer', 'previous_employment', 'qualifications', 'training',
-    'ref1_name', 'ref2_email', 'has_convictions', 'dbs_certificate_number', 'dbs_update_service_number', 'signature_name']) assert.ok(keys.includes(k), k);
-  const html = detailsFormHTML({ full_name: '<b>x</b>', has_convictions: false });
+  for (const k of ['full_name', 'address', 'ni_number', 'qualifications', 'training', 'dbs_certificate_number', 'dbs_issue_date', 'dbs_update_service_number']) assert.ok(keys.includes(k), k);
+  for (const k of ['current_employer', 'previous_employment', 'ref1_name', 'references_before_interview', 'has_convictions', 'declaration_agreed']) assert.ok(!keys.includes(k), k);
+  const html = detailsFormHTML({ full_name: '<b>x</b>', dbs_update_service: false });
   assert.ok(html.includes('&lt;b&gt;x&lt;/b&gt;'));
-  assert.match(html, /name="conviction_details"/);
-  assert.match(html, /data-showif="has_convictions" hidden/);
-  assert.ok(!detailsViewHTML({ has_convictions: false }).includes('If yes'));
+  assert.match(html, /data-showif="dbs_update_service" hidden/);
+  assert.ok(!detailsViewHTML({ dbs_update_service: false }).includes('Update Service ID'));
 });

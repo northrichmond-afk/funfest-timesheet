@@ -5,7 +5,7 @@
 
 import { sb } from '../shared/supabase.js';
 import { esc, toast } from '../shared/ui.js';
-import { detailsViewHTML, detailsFormHTML, wireDetailsForm, readDetailsForm, checkDetails, SECTIONS,
+import { detailsViewHTML, detailsFormHTML, wireDetailsForm, readDetailsForm, checkDetails, SECTIONS, OFFICE_SECTIONS, OFFICE_FIELDS,
   displayValue, matchFolder, safeName, docFileName, detailsFileName, DOC_KINDS } from '../shared/staffdetails.js';
 import { loadJsPDF, imageData } from './invoice.js';
 
@@ -30,9 +30,9 @@ function idb(mode, fn) {
     };
   });
 }
-const getRoot = () => idb('readonly', s => s.get(KEY)).catch(() => null);
+export const getRoot = () => idb('readonly', s => s.get(KEY)).catch(() => null);
 
-async function pickRoot() {
+export async function pickRoot() {
   try {
     const h = await window.showDirectoryPicker({ id: 'ff-staff', mode: 'readwrite', startIn: 'documents' });
     await idb('readwrite', s => s.put(h, KEY));
@@ -40,7 +40,7 @@ async function pickRoot() {
   } catch (e) { if (e.name !== 'AbortError') toast(e.message); return null; }
 }
 
-async function permission(h, ask) {
+export async function permission(h, ask) {
   let p = await h.queryPermission({ mode: 'readwrite' });
   if (p !== 'granted' && ask) { try { p = await h.requestPermission({ mode: 'readwrite' }); } catch { /* needs a click */ } }
   return p === 'granted';
@@ -163,7 +163,8 @@ export async function detailsPdf(p, person, deps = {}) {
   doc.setDrawColor(...PINK); doc.setLineWidth(0.5); doc.line(L, 35, R, 35);
   y = 43;
   const need = h => { if (y + h > 285) { doc.addPage(); y = 18; } };
-  for (const s of SECTIONS) {
+  const filled = sec => sec.fields.some(([k]) => p[k] != null && p[k] !== '');
+  for (const s of [...SECTIONS, ...OFFICE_SECTIONS.filter(filled)]) {
     need(14);
     doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...PURPLE);
     doc.text(s.title, L, y); y += 5.5;
@@ -186,30 +187,87 @@ export async function detailsPdf(p, person, deps = {}) {
   return doc;
 }
 
-// ── Per-person dialog (Staff tab › Details) ───────────────────
+// ── Files already in the person's iCloud folder ──────────────
 
-export async function openStaffDetails(dlg, s) {
+async function personFolder(s, prof, ask) {
+  const root = canPick() ? await getRoot() : null;
+  if (!root) return { error: canPick() ? 'Choose the Staff folder first (Staff tab › Staff files → iCloud).' : 'Needs Chrome or Edge on the Mac.' };
+  if (!(await permission(root, ask))) return { error: 'Allow access to the Staff folder to list the files.', needsClick: true };
+  const dirs = [];
+  for await (const [name, h] of root.entries()) if (h.kind === 'directory') dirs.push(name);
+  const name = prof?.folder_name || matchFolder(dirs, s.name) || matchFolder(dirs, prof?.full_name);
+  if (!name || !dirs.includes(name)) return { error: `No folder for ${s.name} in ${root.name} yet.` };
+  const dir = await root.getDirectoryHandle(name);
+  const files = [];
+  const walk = async (d, prefix, depth) => {
+    for await (const [n, h] of d.entries()) {
+      if (n.startsWith('.')) continue;
+      if (h.kind === 'file') { const f = await h.getFile(); files.push({ path: prefix + n, h, size: f.size, modified: f.lastModified }); }
+      else if (depth < 2) await walk(h, `${prefix}${n}/`, depth + 1);
+    }
+  };
+  await walk(dir, '', 0);
+  files.sort((a, b) => a.path.localeCompare(b.path, 'en', { numeric: true }));
+  return { name, files };
+}
+
+function folderHTML(r) {
+  if (r.error) return `<p class="small muted">${esc(r.error)} ${r.needsClick ? '<button id="fAllow">Allow</button>' : ''}</p>`;
+  if (!r.files.length) return `<p class="small muted">Folder <b>${esc(r.name)}</b> is empty.</p>`;
+  const kb = b => (b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB');
+  return `<p class="small muted">Staff › <b>${esc(r.name)}</b> · ${r.files.length} file${r.files.length === 1 ? '' : 's'}</p>
+    <div class="table-wrap"><table class="small"><tr><th>File</th><th>Modified</th><th class="num">Size</th><th></th></tr>
+    ${r.files.map((f, i) => `<tr><td>${esc(f.path)}</td><td>${fmtDay(f.modified)}</td><td class="num">${kb(f.size)}</td>
+      <td><button data-fopen="${i}">Open</button></td></tr>`).join('')}</table></div>`;
+}
+
+const row = (k, v) => `<tr><th style="width:40%;font-weight:600">${esc(k)}</th><td>${v || '<span class="muted">—</span>'}</td></tr>`;
+
+// ── Per-person dialog (Staff tab › Details & files) ───────────
+
+export async function openStaffDetails(dlg, s, ctx = {}) {
   dlg.innerHTML = '<p class="muted">Loading…</p>';
-  dlg.style.maxWidth = '760px';
+  dlg.style.maxWidth = '860px';
   dlg.addEventListener('close', () => { dlg.style.maxWidth = ''; }, { once: true });
   if (!dlg.open) dlg.showModal();
+  const again = () => openStaffDetails(dlg, s, ctx);
   const [{ data: p, error: e1 }, { data: docs, error: e2 }] = await Promise.all([
     sb.from('staff_profiles').select('*').eq('staff_id', s.id).maybeSingle(),
     sb.from('staff_documents').select('*').eq('staff_id', s.id).order('uploaded_at', { ascending: false }),
   ]);
   if (e1 || e2) { dlg.innerHTML = `<div class="msg bad">${esc((e1 || e2).message)}</div><form method="dialog"><button>Close</button></form>`; return; }
+  const status = { active: '<span class="pill ok">Active</span>', invited: '<span class="pill warn">Invited</span>', left: '<span class="pill bad">Left</span>' }[s.status] || '';
   const docRows = (docs || []).map(d => `<tr>
       <td>${esc(d.kind)}<div class="small muted">${esc(d.file_name)}</div></td>
       <td class="small">${fmtDay(d.uploaded_at)}</td>
       <td class="small">${d.synced_at ? '✅ ' + esc(d.synced_path || 'in iCloud') : '<span class="pill info">Not copied yet</span>'}</td>
       <td><div class="actions"><button data-open="${d.id}">View</button><button class="danger" data-del="${d.id}">Delete</button></div></td></tr>`).join('');
+  const dbsLine = p?.dbs_certificate_number ? `${esc(p.dbs_certificate_number)}${p.dbs_issue_date ? ' · issued ' + esc(displayValue('date', p.dbs_issue_date)) : ''}` : '';
   dlg.innerHTML = `
     <div class="stack">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem">
-        <h2 style="margin:0">${esc(s.name)}</h2>
-        <form method="dialog"><button>Close</button></form>
+        <h2 style="margin:0">${esc(s.name)} ${status}</h2>
+        <form method="dialog" style="display:flex;gap:.4rem"><button type="button" id="pdf">⬇️ PDF</button><button>Close</button></form>
       </div>
-      <h3>Certificates &amp; documents</h3>
+
+      <h3>Summary</h3>
+      <table class="small">
+        ${row('Login email', esc(s.email))}
+        ${row('Phone', esc(p?.phone || s.phone || ''))}
+        ${row('Role', s.role === 'admin' ? 'Admin' : 'Staff')}
+        ${row('Default venue', esc(ctx.siteName ? (s.default_site_id ? ctx.siteName(s.default_site_id) : '') : ''))}
+        ${row('Hourly rate', s.hourly_rate ? '£' + Number(s.hourly_rate).toFixed(2) : '')}
+        ${row('Start date', p?.start_date ? esc(displayValue('date', p.start_date)) : '')}
+        ${row('DBS certificate', dbsLine)}
+        ${row('DBS Update Service', p?.dbs_update_service ? '✅ ' + esc(p.dbs_update_service_number || '') : p?.dbs_update_service === false ? 'Not registered' : '')}
+        ${row('References received', [p?.ref1_received && '1: ' + displayValue('date', p.ref1_received), p?.ref2_received && '2: ' + displayValue('date', p.ref2_received)].filter(Boolean).map(esc).join(' · '))}
+        ${row('Right to work checked', p?.right_to_work_checked_on ? esc(displayValue('date', p.right_to_work_checked_on)) : '')}
+        ${row('Location consent', s.consent_location_at ? fmtDay(s.consent_location_at) : '')}
+        ${row('Last sign-in', s.last_login_at ? fmtDay(s.last_login_at) : 'Never')}
+        ${row('Details last updated', p ? fmtDay(p.updated_at) : 'Not filled in yet')}
+      </table>
+
+      <h3>Certificates uploaded in the app</h3>
       ${docRows ? `<div class="table-wrap"><table><tr><th>Document</th><th>Uploaded</th><th>iCloud</th><th></th></tr>${docRows}</table></div>` : '<p class="muted small">Nothing uploaded yet.</p>'}
       <details><summary class="small">Upload a document for ${esc(s.name)}</summary>
         <form id="aUp" class="row" style="margin-top:.6rem">
@@ -218,11 +276,40 @@ export async function openStaffDetails(dlg, s) {
           <div><button class="primary">Upload</button></div>
         </form>
       </details>
-      <label>iCloud folder name (under Staff)<input id="fold" value="${esc(p?.folder_name || '')}" placeholder="${esc(s.name)} (found automatically)"></label>
-      <div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">Details</h3>
-        ${p ? `<span class="small muted">Updated ${fmtDay(p.updated_at)}</span>` : ''}<button id="edit">Edit</button></div>
-      <div id="det">${p ? detailsViewHTML(p) : '<p class="muted">Not filled in yet. The person can do this in the staff app under <b>My details</b>.</p>'}</div>
+
+      <h3>Staff file in iCloud</h3>
+      <div id="fold">${canPick() ? '<p class="small muted">Loading…</p>' : '<p class="small muted">Needs Chrome or Edge on the Mac.</p>'}</div>
+      <label class="small">iCloud folder name (under Staff)<input id="foldName" value="${esc(p?.folder_name || '')}" placeholder="${esc(s.name)} (found automatically)"></label>
+
+      <div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">Details from ${esc(s.name.split(' ')[0])}</h3><button id="editStaff">Edit</button></div>
+      <div id="det">${p ? detailsViewHTML(p) : '<p class="muted small">Not filled in yet. They can do this in the staff app under <b>My details</b>.</p>'}</div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">Office record: references, employment, safeguarding</h3><button id="editOffice">Edit</button></div>
+      <p class="small muted" style="margin-top:.2rem">Only admins can see and change these.</p>
+      <div id="off">${detailsViewHTML(p || {}, OFFICE_SECTIONS)}</div>
     </div>`;
+
+  // Files in iCloud
+  const foldBox = dlg.querySelector('#fold');
+  const showFolder = async (ask) => {
+    if (!canPick()) return;
+    let r;
+    try { r = await personFolder(s, p, ask); } catch (e) { r = { error: e.message }; }
+    foldBox.innerHTML = folderHTML(r);
+    foldBox.querySelector('#fAllow')?.addEventListener('click', () => showFolder(true));
+    foldBox.querySelectorAll('[data-fopen]').forEach(b => b.onclick = async () => {
+      const f = await r.files[+b.dataset.fopen].h.getFile();
+      const url = URL.createObjectURL(f);
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    });
+  };
+  showFolder(false);
+
+  dlg.querySelector('#pdf').onclick = async () => {
+    const doc = await detailsPdf(p || { updated_at: new Date().toISOString() }, s.name);
+    window.open(doc.output('bloburl'), '_blank');
+  };
   dlg.querySelectorAll('[data-open]').forEach(b => b.onclick = async () => {
     const d = docs.find(x => x.id === b.dataset.open);
     const w = window.open('', '_blank');
@@ -235,7 +322,7 @@ export async function openStaffDetails(dlg, s) {
     if (!window.confirm(`Delete “${d.kind}” from the app? ${d.synced_at ? 'The copy in iCloud is kept.' : 'It hasn’t been copied to iCloud yet.'}`)) return; // eslint-disable-line no-alert
     await sb.storage.from(BUCKET).remove([d.storage_path]);
     const { error } = await sb.from('staff_documents').delete().eq('id', d.id);
-    toast(error ? error.message : 'Deleted'); openStaffDetails(dlg, s);
+    toast(error ? error.message : 'Deleted'); again();
   });
   dlg.querySelector('#aUp').onsubmit = async (ev) => {
     ev.preventDefault();
@@ -245,28 +332,31 @@ export async function openStaffDetails(dlg, s) {
     if (error) return toast(error.message);
     const { error: e3 } = await sb.from('staff_documents').insert({ staff_id: s.id, kind: ev.target.kind.value, file_name: f.name, storage_path: path, size_bytes: f.size, mime_type: f.type || null });
     if (e3) { await sb.storage.from(BUCKET).remove([path]); return toast(e3.message); }
-    toast('Uploaded'); openStaffDetails(dlg, s);
+    toast('Uploaded'); again();
   };
-  dlg.querySelector('#fold').onchange = async (ev) => {
+  dlg.querySelector('#foldName').onchange = async (ev) => {
     const v = safeName(ev.target.value) || null;
     const { error } = await sb.from('staff_profiles').upsert({ staff_id: s.id, ...(p ? {} : { full_name: s.name }), folder_name: v }, { onConflict: 'staff_id' });
     toast(error ? error.message : 'Folder name saved');
+    if (!error) again();
   };
-  dlg.querySelector('#edit').onclick = () => {
-    const box = dlg.querySelector('#det');
-    box.innerHTML = `<form id="ef" class="stack details-form">${detailsFormHTML(p || { full_name: s.name, phone: s.phone })}
-      <div id="efMsg"></div><div style="display:flex;gap:.5rem"><button class="primary">Save</button><button type="button" id="efCancel">Cancel</button></div></form>`;
-    const form = box.querySelector('#ef');
+  const editor = (boxSel, sections, fields) => () => {
+    const box = dlg.querySelector(boxSel);
+    box.innerHTML = `<form class="stack details-form">${detailsFormHTML(p || (fields ? {} : { full_name: s.name, phone: s.phone }), sections)}
+      <div class="msgs"></div><div style="display:flex;gap:.5rem"><button class="primary">Save</button><button type="button" class="cancel">Cancel</button></div></form>`;
+    const form = box.querySelector('form');
     wireDetailsForm(form);
-    box.querySelector('#efCancel').onclick = () => openStaffDetails(dlg, s);
+    box.querySelector('.cancel').onclick = again;
     form.onsubmit = async (ev) => {
       ev.preventDefault();
-      const row = readDetailsForm(form);
-      const { error } = await sb.from('staff_profiles').upsert({ staff_id: s.id, ...row }, { onConflict: 'staff_id' });
-      if (error) { box.querySelector('#efMsg').innerHTML = `<div class="msg bad">${esc(error.message)}</div>`; return; }
-      const warn = checkDetails(row);
+      const data = readDetailsForm(form, fields);
+      const { error } = await sb.from('staff_profiles').upsert({ staff_id: s.id, ...(p ? {} : { full_name: s.name }), ...data }, { onConflict: 'staff_id' });
+      if (error) { box.querySelector('.msgs').innerHTML = `<div class="msg bad">${esc(error.message)}</div>`; return; }
+      const warn = fields ? [] : checkDetails(data);
       toast(warn.length ? 'Saved. Check: ' + warn.join(' ') : 'Saved', 6000);
-      openStaffDetails(dlg, s);
+      again();
     };
   };
+  dlg.querySelector('#editStaff').onclick = editor('#det', SECTIONS, undefined);
+  dlg.querySelector('#editOffice').onclick = editor('#off', OFFICE_SECTIONS, OFFICE_FIELDS);
 }
