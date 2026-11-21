@@ -4,6 +4,7 @@ import { calcEntry, fmtHours, decimalHours, localDate, localTime, londonDateTime
 import { esc, toast, download, setRoleTitle } from '../shared/ui.js';
 import { staffMatches } from '../shared/search.js';
 import { tabAdmin } from './invoice.js';
+import { staffFilesCard, openStaffDetails } from './stafffiles.js';
 
 const view = document.getElementById('view');
 const dlg = document.getElementById('dlg');
@@ -607,6 +608,7 @@ async function tabStaff() {
   await loadRef();
   const pill = s => s.status === 'active' ? '<span class="pill ok">Active</span>' : s.status === 'invited' ? '<span class="pill warn">Invited</span>' : '<span class="pill bad">Left</span>';
   view.innerHTML = `
+    <div class="card" id="staffFiles"></div>
     <div class="card">
       <h2>Add staff</h2>
       <p class="muted small">Use the email the person will sign in with: their <strong>Google account</strong>, or any email if they'll use a password. Only emails on this list can sign in.</p>
@@ -638,6 +640,7 @@ async function tabStaff() {
           <td><div class="actions">
             ${s.status !== 'left' ? `<button data-inv="${s.id}">Invite</button>` : ''}
             <button data-ed="${s.id}">Edit</button>
+            <button data-det="${s.id}">Details &amp; files</button>
           </div></td></tr>`).join('')}
       </table></div>
     </div>`;
@@ -663,6 +666,8 @@ async function tabStaff() {
   };
   view.querySelectorAll('[data-inv]').forEach(b => b.onclick = () => invite(state.staff.find(s => s.id === b.dataset.inv)));
   view.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => editStaff(state.staff.find(s => s.id === b.dataset.ed)));
+  view.querySelectorAll('[data-det]').forEach(b => b.onclick = () => openStaffDetails(dlg, state.staff.find(s => s.id === b.dataset.det)));
+  staffFilesCard(document.getElementById('staffFiles'), state.staff);
 
 }
 

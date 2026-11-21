@@ -112,3 +112,10 @@ Choose the club (North Richmond or Hounslow), type one or more booking (order) n
 - Each club sends from its own Google account. Set it once per club under **Invoice letterhead details › Email invoices from**. Google asks you to approve "Send email on your behalf" the first time in each browser session.
 - Google Cloud (project *Fun Fest Timesheet*): the **Gmail API** is enabled and the OAuth client allows `https://northrichmond-afk.github.io`. While the app's publishing status is *Testing*, every sending account must be listed under **Google Auth Platform › Audience › Test users**, and Google shows an "unverified app" screen (choose *Continue*).
 - The client ID in `shared/config.js` (`GOOGLE_CLIENT_ID`) is public by design; no secret is stored.
+
+## Staff details and certificates
+
+- **Staff app › My details:** staff fill in and update the details from the Fun Fest application form (personal details, employment, qualifications and training, two referees, safeguarding declaration) plus **DBS certificate number, issue date and DBS Update Service ID**, and upload certificates (photo or PDF, up to 15 MB) with a type such as *DBS certificate* or *Paediatric first aid certificate*.
+- Stored in Supabase: details in `staff_profiles`, files in the private Storage bucket `staff-docs`. Staff see only their own; they can remove an upload until the office has filed it. Run `supabase/004_staff_details.sql` once in the SQL Editor.
+- **Admin › Staff › Staff files → iCloud:** choose iCloud Drive › FunFest › Staff once (Chrome or Edge on the Mac). New uploads are copied into each person's folder as e.g. `DBS certificate - Alice Sweeney (2026-11-21).pdf`, and their details as `Staff details - Alice Sweeney.pdf` (rewritten when they change). Existing folders are matched by name; set a different folder per person under **Details & files**. Copying runs automatically when the Staff tab opens and the folder is already allowed; otherwise click **Copy to iCloud now**.
+- **Details & files** (per person on the Staff tab): view and edit their details, view/delete/upload documents.

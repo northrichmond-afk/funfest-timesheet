@@ -3,6 +3,7 @@ import { isNative, nativePosition } from '../shared/native.js';
 import { renderLogin, renderNewPassword } from '../shared/login.js';
 import { calcEntry, fmtHours, localDate, localTime, decimalHours, distanceM } from '../shared/hours.js';
 import { esc, toast, setRoleTitle } from '../shared/ui.js';
+import { renderDetails } from './details.js';
 
 const view = document.getElementById('view');
 const dlg = document.getElementById('dlg');
@@ -113,11 +114,14 @@ async function render() {
     <div class="tabs">
       <button data-t="today" class="${tab === 'today' ? 'active' : ''}">Today</button>
       <button data-t="hours" class="${tab === 'hours' ? 'active' : ''}">My hours</button>
+      <button data-t="details" class="${tab === 'details' ? 'active' : ''}">My details</button>
     </div>
     <div id="pane"><p class="center muted">Loading…</p></div>
     ${installHint()}`;
   view.querySelectorAll('.tabs button').forEach(b => b.onclick = () => { tab = b.dataset.t; render(); });
-  if (tab === 'today') renderToday(); else renderHours();
+  if (tab === 'today') renderToday();
+  else if (tab === 'details') renderDetails(document.getElementById('pane'), me);
+  else renderHours();
 }
 
 async function renderToday() {
