@@ -88,7 +88,7 @@ function go(tab) {
   document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   view.innerHTML = '<p class="center muted">Loading…</p>';
   ({ today: tabToday, rota: tabRota, entries: tabEntries, requests: tabRequests, reports: tabReports,
-     staff: tabStaff, sites: tabSites, settings: tabSettings, admin: () => tabAdmin(view, dlg) }[tab] || tabToday)();
+     staff: tabStaff, sites: tabSites, settings: tabSettings, invoices: () => tabAdmin(view, dlg), admin: () => go('invoices') }[tab] || tabToday)();
 }
 
 // ── Today ────────────────────────────────────────────────────
