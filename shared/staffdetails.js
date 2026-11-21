@@ -31,7 +31,9 @@ export const OFFICE_SECTIONS = [
     ['start_date', 'Start date', 'date'],
     ['ref1_received', 'Reference 1 received', 'date'],
     ['ref2_received', 'Reference 2 received', 'date'],
+    ['ref3_received', 'Reference 3 received', 'date'],
     ['dbs_checked_on', 'DBS certificate seen / Update Service checked on', 'date'],
+    ['dbs_expiry_date', 'DBS expiry / Update Service renewal date', 'date'],
     ['right_to_work_checked_on', 'Right to work checked on', 'date'],
     ['office_notes', 'Notes', 'textarea', { rows: 4 }],
   ] },
@@ -153,6 +155,25 @@ export function detailsViewHTML(p = {}, sections = SECTIONS) {
     return `<h3>${esc(s.title)}</h3><table class="small">${rows}</table>`;
   }).join('');
 }
+
+// ── Critical information (Reports › Critical info) ─────────
+
+export const REFS_RULE_FROM = '2026-09-01';
+export function criticalIssues(p = {}, docs = 0, todayIso = new Date().toISOString().slice(0, 10)) {
+  const out = [];
+  if (!p.dbs_certificate_number && !p.dbs_update_service_number) out.push({ key: 'dbs', text: 'No DBS reference' });
+  const threeYears = d => { const x = new Date(d + 'T12:00:00Z'); x.setUTCFullYear(x.getUTCFullYear() + 3); return x.toISOString().slice(0, 10); };
+  if (p.dbs_expiry_date && p.dbs_expiry_date < todayIso) out.push({ key: 'expired', text: `DBS expired ${p.dbs_expiry_date}` });
+  else if (!p.dbs_expiry_date && !p.dbs_update_service_number && p.dbs_issue_date && threeYears(p.dbs_issue_date) < todayIso) {
+    out.push({ key: 'expired', text: `DBS over 3 years old (issued ${p.dbs_issue_date}), not on Update Service` });
+  }
+  if (p.start_date && p.start_date >= REFS_RULE_FROM) {
+    const got = [p.ref1_received, p.ref2_received, p.ref3_received].filter(Boolean).length;
+    if (got < 3) out.push({ key: 'refs', text: `${got} of 3 references received${docs ? ` (${docs} reference file${docs === 1 ? '' : 's'} uploaded)` : ''}` });
+  }
+  return out;
+}
+
 
 // ── iCloud file and folder names ─────────────────────────────
 

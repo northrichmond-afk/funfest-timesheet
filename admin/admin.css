@@ -21,3 +21,5 @@ main { max-width: 1400px; }
 .subtabs button { font-family: var(--font-nav); font-weight: 600; }
 .subtabs button.active { background: var(--pink); color: #fff; border-color: var(--pink); }
 @media print { .subtabs { display: none !important; } }
+button.stat { border: 1px solid var(--line); font: inherit; color: inherit; }
+button.stat.active { border-color: var(--pink); box-shadow: 0 0 0 2px var(--pink) inset; }
