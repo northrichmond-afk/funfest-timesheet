@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractInvoice, careDatesText, findDates, invoiceFileName, ordinal, longDate, shortDate } from '../shared/invoice.js';
+import { extractInvoice, mergeInvoices, parseOrderList, careDatesText, findDates, invoiceFileName, ordinal, longDate, shortDate } from '../shared/invoice.js';
 
 // Shape of a real North Richmond WooCommerce order (names and contact details made up)
 const item = (name, date, slot, child, total = '20.00') => ({
@@ -71,14 +71,38 @@ test('date helpers', () => {
   assert.equal(invoiceFileName('2930'), 'INVOICE_2930_NorthRichmond.pdf');
 });
 
-test('order input: number, #number, or a pasted WordPress order link picks the club', async () => {
+test('order input: one or several numbers, or pasted WordPress order links', () => {
+  const clubs = ['northrichmond', 'hounslow'];
+  assert.deepEqual(parseOrderList('2930', clubs), { club: null, nums: ['2930'] });
+  assert.deepEqual(parseOrderList(' #2930, 2926 ,2925', clubs), { club: null, nums: ['2930', '2926', '2925'] });
+  assert.deepEqual(parseOrderList('2930,2930', clubs), { club: null, nums: ['2930'] });
+  assert.deepEqual(parseOrderList('https://fun-fest.co.uk/hounslow/wp-admin/admin.php?page=wc-orders&action=edit&id=5951, 5882', clubs), { club: 'hounslow', nums: ['5951', '5882'] });
+  assert.deepEqual(parseOrderList('https://fun-fest.co.uk/northrichmond/wp-admin/post.php?post=2930&action=edit', clubs), { club: 'northrichmond', nums: ['2930'] });
+  assert.ok(parseOrderList('https://fun-fest.co.uk/hounslow/x?id=1, https://fun-fest.co.uk/northrichmond/x?id=2', clubs).error);
+  assert.ok(parseOrderList('2930, abc', clubs).error);
+  assert.equal(parseOrderList('  ', clubs), null);
+});
+
+test('several orders combine into one invoice', () => {
+  const a = extractInvoice(order);
+  const b = extractInvoice({ ...order, number: '2950', total: '24.00', discount_total: '0.00', date_paid: '2026-11-24T10:00:00',
+    line_items: [item('Lego Adventures', '2026-12-23', 'AM', 'Sam Parent', '24.00')] });
+  const v = mergeInvoices([b, a]);
+  assert.deepEqual(v.numbers, ['2950', '2930']);
+  assert.equal(v.total, 104);
+  assert.equal(v.discount, 16);
+  assert.equal(v.careDates, '21st – 23rd December 2026');
+  assert.deepEqual(v.paidOnList, ['2026-11-19', '2026-11-24']);
+  assert.equal(v.items[0].description, 'Mon 21 Dec 2026 (AM) – Crafty Creations');
+  assert.equal(v.items.at(-1).description, 'Wed 23 Dec 2026 (AM) – Lego Adventures');
+  assert.equal(v.payers, 1);
+  assert.equal(invoiceFileName(v.number, 'Hounslow'), 'INVOICE_2950_2930_Hounslow.pdf');
+  assert.deepEqual(mergeInvoices([a]).numbers, ['2930']);
+});
+
+test('clubs have the right Ofsted numbers', async () => {
   globalThis.localStorage ??= { getItem: () => null, setItem() {} };
-  const { parseOrderInput, CLUBS } = await import('../admin/invoice.js');
-  assert.deepEqual(parseOrderInput('2930'), { club: null, num: '2930' });
-  assert.deepEqual(parseOrderInput(' #2930 '), { club: null, num: '2930' });
-  assert.deepEqual(parseOrderInput('https://fun-fest.co.uk/hounslow/wp-admin/admin.php?page=wc-orders&action=edit&id=5951'), { club: 'hounslow', num: '5951' });
-  assert.deepEqual(parseOrderInput('https://fun-fest.co.uk/northrichmond/wp-admin/post.php?post=2930&action=edit'), { club: 'northrichmond', num: '2930' });
-  assert.equal(parseOrderInput('abc'), null);
+  const { CLUBS } = await import('../admin/invoice.js');
   assert.equal(CLUBS.hounslow.ofsted, '2909023');
   assert.equal(CLUBS.northrichmond.ofsted, '2818035');
 });

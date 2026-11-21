@@ -137,7 +137,7 @@ export function extractInvoice(order) {
     .sort((a, b) => (a.date || '9').localeCompare(b.date || '9') || SLOT_ORDER(a.slot) - SLOT_ORDER(b.slot) || a.i - b.i)
     .map(it => ({
       description: [it.date && shortDate(it.date) + (it.slot ? ` (${it.slot})` : ''), it.name, uniqueKids.length > 1 && it.kids.join(', ')].filter(Boolean).join(' – '),
-      details: it.details, qty: it.qty, amount: it.amount,
+      details: it.details, qty: it.qty, amount: it.amount, date: it.date, slot: it.slot, kids: it.kids,
     }));
 
   const refunded = (order.refunds || []).reduce((s, r) => s + Math.abs(Number(r.total) || 0), 0);
@@ -159,13 +159,65 @@ export function extractInvoice(order) {
     paidOn: (order.date_paid || order.date_completed || order.date_created || '').slice(0, 10),
     paymentMethod: stripTags(order.payment_method_title || order.payment_method || ''),
     careDates: careDatesText(dates),
+    dates: [...new Set(dates)].sort(),
     createdOn: (order.date_created || '').slice(0, 10),
   };
 }
 
+// One invoice covering several orders (e.g. a parent who booked twice).
+// Numbers "5882, 5946"; sessions from all orders in date order; totals added up.
+export function mergeInvoices(list) {
+  if (list.length === 1) return { ...list[0], numbers: [list[0].number] };
+  const uniq = a => [...new Set(a.filter(Boolean))];
+  const children = uniq(list.flatMap(v => v.children));
+  const items = list.flatMap((v, oi) => v.items.map((it, i) => ({ ...it, k: [it.date || '9', SLOT_ORDER(it.slot || ''), oi, i] })))
+    .sort((a, b) => { for (let j = 0; j < 4; j++) { const c = a.k[j] < b.k[j] ? -1 : a.k[j] > b.k[j] ? 1 : 0; if (c) return c; } return 0; })
+    .map(({ k, ...it }) => (children.length > 1 && it.kids?.length && !it.description.includes(it.kids.join(', '))
+      ? { ...it, description: `${it.description} – ${it.kids.join(', ')}` } : it));
+  const first = list[0];
+  const dates = uniq(list.flatMap(v => v.dates || [])).sort();
+  return {
+    ...first,
+    numbers: list.map(v => v.number),
+    number: list.map(v => v.number).join(', '),
+    status: list.every(v => v.status === first.status) ? first.status : list.map(v => `#${v.number} ${v.status}`).join(', '),
+    children,
+    items,
+    discount: money(list.reduce((s, v) => s + v.discount, 0)),
+    refunded: money(list.reduce((s, v) => s + v.refunded, 0)),
+    total: money(list.reduce((s, v) => s + v.total, 0)),
+    paidOnList: uniq(list.map(v => v.paidOn)).sort(),
+    paidOn: uniq(list.map(v => v.paidOn)).sort().at(-1) || '',
+    paymentMethod: uniq(list.map(v => v.paymentMethod)).join(' / '),
+    careDates: careDatesText(dates) || uniq(list.map(v => v.careDates)).join(', '),
+    dates,
+    payers: uniq(list.map(v => v.parent.toLowerCase())).length,
+  };
+}
+
+// "2930", "#2930", "2930, 2926" or pasted WordPress order links → { club, nums: [...] }
+export function parseOrderList(text, clubIds = []) {
+  const parts = String(text || '').split(/[\s,;]+/).map(p => p.trim()).filter(Boolean);
+  if (!parts.length) return null;
+  let club = null;
+  const nums = [];
+  for (const p of parts) {
+    const m = p.match(/fun-fest\.co\.uk\/([a-z0-9-]+)\/.*?[?&](?:id|post)=(\d+)/i);
+    if (m) {
+      const c = clubIds.includes(m[1].toLowerCase()) ? m[1].toLowerCase() : null;
+      if (c && club && c !== club) return { error: 'Those links are from different clubs. Make one invoice per club.' };
+      club = c || club; nums.push(m[2]); continue;
+    }
+    const n = p.replace(/^#/, '');
+    if (!/^\d+$/.test(n)) return { error: `“${p}” isn't an order number.` };
+    nums.push(n);
+  }
+  return { club, nums: [...new Set(nums)] };
+}
+
 // "INVOICE_5735_NorthRichmond.pdf" (same pattern as the existing invoices in the FunFest/Invoice folder)
 export function invoiceFileName(number, club = 'NorthRichmond') {
-  const n = String(number).replace(/[^\w-]+/g, '');
+  const n = String(number).split(/[^\w-]+/).filter(Boolean).join('_');
   return `INVOICE_${n}_${club.replace(/[^\w-]+/g, '')}.pdf`;
 }
 

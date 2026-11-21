@@ -10,7 +10,7 @@
 // • Parent/child details are not stored anywhere except the PDF itself.
 
 import { esc, toast } from '../shared/ui.js';
-import { extractInvoice, invoiceFileName, longDate, gbp } from '../shared/invoice.js';
+import { extractInvoice, mergeInvoices, parseOrderList, invoiceFileName, longDate, gbp } from '../shared/invoice.js';
 
 const LS_CONN = 'ff.invoice.wc';      // { user, pass } – one WordPress login works for every club site
 const LS_CLUB = 'ff.invoice.club.';   // + club id: overrides for CLUBS[id]
@@ -46,17 +46,8 @@ const conn = () => ({ user: '', pass: '', ...getJSON(LS_CONN, {}) });
 let clubId = (() => { try { return CLUBS[localStorage.getItem(LS_SEL)] ? localStorage.getItem(LS_SEL) : 'northrichmond'; } catch { return 'northrichmond'; } })();
 const club = (id = clubId) => ({ ...CLUBS[id], ...getJSON(LS_CLUB + id, {}), id });
 
-// Accepts "5951", "#5951", or a pasted WordPress order link such as
-// https://fun-fest.co.uk/hounslow/wp-admin/admin.php?page=wc-orders&action=edit&id=5951
-export function parseOrderInput(text) {
-  const t = String(text || '').trim();
-  const m = t.match(/fun-fest\.co\.uk\/([a-z0-9-]+)\/.*?[?&](?:id|post)=(\d+)/i);
-  if (m) return { club: CLUBS[m[1].toLowerCase()] ? m[1].toLowerCase() : null, num: m[2] };
-  const n = t.replace(/^#/, '');
-  return /^\d+$/.test(n) ? { club: null, num: n } : null;
-}
-
 let current = null;           // invoice fields being edited
+let queue = [];               // further invoices waiting ("Separate invoices" mode)
 const made = [];              // invoices created this session
 
 // ── Tab ───────────────────────────────────────────────────────
@@ -73,7 +64,10 @@ export function tabAdmin(view, dlg) {
       ${c.user && c.pass ? '' : `<div class="msg warn">First connect to WordPress: see <b>Website connection</b> below.</div>`}
       <form id="invFind" class="toolbar">
         <label>Club<select name="club">${Object.entries(CLUBS).map(([id, k]) => `<option value="${id}" ${id === clubId ? 'selected' : ''}>${esc(k.label)}</option>`).join('')}</select></label>
-        <label>Invoice / order number<input name="num" required placeholder="e.g. 2930 or paste link" autocomplete="off" style="width:220px"></label>
+        <label>Invoice / order number(s)<input name="num" required placeholder="e.g. 2930 or 2930, 2926" autocomplete="off" style="width:260px"></label>
+        <label>Several numbers<select name="mode">
+          <option value="combined">One invoice for all</option>
+          <option value="separate">Separate invoices</option></select></label>
         <button class="primary">Get order details</button>
       </form>
       <div id="invForm"></div>
@@ -118,10 +112,15 @@ export function tabAdmin(view, dlg) {
   view.querySelector('#invFind [name=club]').onchange = (ev) => { setClub(ev.target.value); current = null; tabAdmin(view, dlg); };
   view.querySelector('#invFind').onsubmit = (ev) => {
     ev.preventDefault();
-    const p = parseOrderInput(ev.target.num.value);
-    if (!p) return toast('Enter the order number (digits) or paste the order link.');
-    if (p.club && p.club !== clubId) { setClub(p.club); current = null; tabAdmin(view, dlg); view.querySelector('#invFind [name=num]').value = p.num; }
-    fetchOrder(view, p.num);
+    const raw = ev.target.num.value, mode = ev.target.mode.value;
+    const p = parseOrderList(raw, Object.keys(CLUBS));
+    if (!p) return toast('Enter the order number(s), separated by commas, or paste the order link.');
+    if (p.error) return toast(p.error, 6000);
+    if (p.club && p.club !== clubId) {
+      setClub(p.club); current = null; queue = []; tabAdmin(view, dlg);
+      view.querySelector('#invFind [name=num]').value = raw; view.querySelector('#invFind [name=mode]').value = mode;
+    }
+    fetchOrders(view, p.nums, mode);
   };
   view.querySelector('#invConn').onsubmit = async (ev) => {
     ev.preventDefault();
@@ -160,25 +159,35 @@ async function wc(path, base = club().base) {
   return body;
 }
 
-async function fetchOrder(view, num) {
-  const box = view.querySelector('#invForm');
-  box.innerHTML = '<p class="muted">Fetching order…</p>';
-  try {
-    let order;
-    try { order = await wc(`/wp-json/wc/v3/orders/${num}`); }
-    catch (e) {
-      // Sequential-order-number plugins: the visible number can differ from the internal ID
-      if (!/No order/.test(e.message)) throw e;
-      const list = await wc(`/wp-json/wc/v3/orders?search=${num}&per_page=20`);
-      order = (list || []).find(o => String(o.number) === num);
-      if (!order) throw e;
-    }
-    const inv = extractInvoice(order);
-    current = { ...inv, club: clubId, invoiceDate: new Date().toISOString().slice(0, 10) };
-    renderForm(view);
-  } catch (e) {
-    box.innerHTML = `<div class="msg bad">${esc(e.message)}</div>`;
+async function getOrder(num) {
+  try { return await wc(`/wp-json/wc/v3/orders/${num}`); }
+  catch (e) {
+    // Sequential-order-number plugins: the visible number can differ from the internal ID
+    if (!/No order/.test(e.message)) throw e;
+    const list = await wc(`/wp-json/wc/v3/orders?search=${num}&per_page=20`);
+    const order = (list || []).find(o => String(o.number) === num);
+    if (!order) throw e;
+    return order;
   }
+}
+
+async function fetchOrders(view, nums, mode) {
+  const box = view.querySelector('#invForm');
+  box.innerHTML = `<p class="muted">Fetching ${nums.length > 1 ? nums.length + ' orders' : 'order'}…</p>`;
+  const got = [], bad = [];
+  for (const n of nums) {
+    try { got.push(extractInvoice(await getOrder(n))); }
+    catch (e) {
+      if (/login|reach|connection/i.test(e.message)) { box.innerHTML = `<div class="msg bad">${esc(e.message)}</div>`; return; }
+      bad.push(`#${n}: ${e.message}`);
+    }
+  }
+  if (!got.length) { box.innerHTML = `<div class="msg bad">${esc(bad.join(' · '))}</div>`; return; }
+  const stamp = v => ({ ...v, club: clubId, invoiceDate: new Date().toISOString().slice(0, 10), problems: bad });
+  if (mode === 'separate') { queue = got.map(v => stamp(mergeInvoices([v]))); current = queue.shift(); }
+  else { queue = []; current = stamp(mergeInvoices(got)); }
+  current.batch = { total: got.length, done: 0 };
+  renderForm(view);
 }
 
 // ── Review form ───────────────────────────────────────────────
@@ -191,13 +200,17 @@ function renderForm(view) {
   const itemRows = v.items.map((it, i) => `
     <tr><td><input name="desc${i}" value="${esc(it.description)}"><div class="small muted">${esc(it.details)}</div></td>
       <td class="num"><input name="amt${i}" type="number" step="0.01" value="${it.amount.toFixed(2)}" style="width:100px"></td></tr>`).join('');
+  const many = v.numbers.length > 1;
+  const step = queue.length || v.batch?.done ? `<span class="pill info">Invoice ${(v.batch?.done || 0) + 1} of ${(v.batch?.done || 0) + 1 + queue.length}</span> ` : '';
   box.innerHTML = `
     <hr>
-    <h3>${esc(CLUBS[v.club]?.label || '')} order #${esc(v.number)} ${PAID.includes(v.status) ? `<span class="pill ok">${esc(v.status)}</span>` : `<span class="pill warn">${esc(v.status || 'unknown')}: not marked paid</span>`}</h3>
+    ${v.problems?.length ? `<div class="msg bad small">Skipped: ${esc(v.problems.join(' · '))}</div>` : ''}
+    ${v.payers > 1 ? `<div class="msg warn small">These orders were booked by different parents. Check this should be one invoice.</div>` : ''}
+    <h3>${step}${esc(CLUBS[v.club]?.label || '')} order${many ? 's' : ''} #${esc(v.numbers.join(', #'))} ${PAID.includes(v.status) ? `<span class="pill ok">${esc(v.status)}</span>` : `<span class="pill warn">${esc(v.status || 'unknown')}: not marked paid</span>`}</h3>
     <form id="invEdit" class="stack" style="max-width:760px">
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:.6rem">
         <label>Invoice date<input name="invoiceDate" type="date" value="${esc(v.invoiceDate)}" required></label>
-        <label>Invoice number<input name="number" value="${esc(v.number)}" required></label>
+        <label>Invoice number${many ? 's' : ''}<input name="number" value="${esc(v.number)}" required></label>
         <label>Parent / payer<input name="parent" value="${esc(v.parent)}"></label>
         <label>Email<input name="email" value="${esc(v.email)}"></label>
         <label>Phone<input name="phone" value="${esc(v.phone)}"></label>
@@ -210,15 +223,16 @@ function renderForm(view) {
       <table><tr><th>Booking</th><th class="num">Amount</th></tr>${itemRows}</table>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:.6rem">
         <label>Total paid (£)<input name="total" type="number" step="0.01" value="${v.total.toFixed(2)}" required></label>
-        <label>Payment received on<input name="paidOn" type="date" value="${esc(v.paidOn)}"></label>
+        <label>Payment received on<input name="paidText" value="${esc(v.paidText ?? (v.paidOnList || [v.paidOn]).filter(Boolean).map(longDate).join(' and '))}"></label>
         <label>Payment method<input name="paymentMethod" value="${esc(v.paymentMethod)}"></label>
       </div>
       ${v.discount ? `<label class="small">Discount already taken off the amounts (£)<input name="discount" type="number" step="0.01" value="${v.discount.toFixed(2)}" style="width:120px"></label>` : ''}
       ${v.refunded ? `<p class="small msg warn">This order has ${gbp(v.refunded)} refunded; the total above is after the refund.</p>` : ''}
       <label>Note on invoice (optional)<textarea name="note" rows="2">${esc(v.note || '')}</textarea></label>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-        <button class="primary" name="go" value="save">💾 Create &amp; save PDF</button>
+        <button class="primary" name="go" value="save">💾 Create &amp; save PDF${queue.length ? ', then next' : ''}</button>
         <button name="go" value="preview">👁 Preview</button>
+        ${queue.length ? '<button type="button" id="invSkip">Skip this one</button>' : ''}
         <button type="button" id="invClear">Clear</button>
       </div>
     </form>`;
@@ -237,9 +251,21 @@ function renderForm(view) {
       made.unshift({ name, where, parent: current.parent, total: current.total });
       showMade(view);
       toast(`Saved ${name}`, 5000);
+      next(view);
     } catch (e) { console.error(e); toast(e.message || String(e), 8000); }
   };
-  box.querySelector('#invClear').onclick = () => { current = null; box.innerHTML = ''; };
+  box.querySelector('#invClear').onclick = () => { current = null; queue = []; box.innerHTML = ''; };
+  const skip = box.querySelector('#invSkip');
+  if (skip) skip.onclick = () => next(view);
+}
+
+// Separate-invoices mode: move on to the next order in the queue
+function next(view) {
+  if (!queue.length) return;
+  const batch = { ...current.batch, done: (current.batch?.done || 0) + 1 };
+  current = { ...queue.shift(), batch };
+  renderForm(view);
+  view.querySelector('#invForm')?.scrollIntoView({ behavior: 'smooth' });
 }
 
 function readForm(form) {
@@ -248,7 +274,7 @@ function readForm(form) {
   Object.assign(current, {
     invoiceDate: f.invoiceDate, number: f.number.trim(), parent: f.parent.trim(), email: f.email.trim(), phone: f.phone.trim(),
     address: lines(f.address), children: lines(f.children), careDates: f.careDates.trim(),
-    total: Number(f.total) || 0, paidOn: f.paidOn, paymentMethod: f.paymentMethod.trim(), note: f.note.trim(),
+    total: Number(f.total) || 0, paidText: f.paidText.trim(), paymentMethod: f.paymentMethod.trim(), note: f.note.trim(),
     discount: f.discount === undefined ? current.discount : Number(f.discount) || 0,
   });
   current.items = current.items.map((it, i) => ({ ...it, description: (f['desc' + i] ?? it.description).trim(), amount: Number(f['amt' + i] ?? it.amount) || 0 }));
@@ -310,11 +336,15 @@ export async function buildPdf(v, c, deps = {}) {
   // Title
   y += 8;
   doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(...PINK);
-  const title = `INVOICE / PAYMENT RECEIPT #${v.number}`;
-  doc.text(title, W / 2, y, { align: 'center' });
-  const tw = doc.getTextWidth(title);
-  doc.setDrawColor(...PINK); doc.setLineWidth(0.4); doc.line(W / 2 - tw / 2, y + 1.2, W / 2 + tw / 2, y + 1.2);
-  y += 12;
+  const nums = String(v.number).split(/[\s,&#]+/).filter(Boolean);
+  const titleLines = doc.splitTextToSize(`INVOICE / PAYMENT RECEIPT #${nums.join(', #')}`, CW);
+  doc.setDrawColor(...PINK); doc.setLineWidth(0.4);
+  titleLines.forEach((t, i) => {
+    const ty = y + i * 7.5, tw = doc.getTextWidth(t);
+    doc.text(t, W / 2, ty, { align: 'center' });
+    doc.line(W / 2 - tw / 2, ty + 1.2, W / 2 + tw / 2, ty + 1.2);
+  });
+  y += 12 + (titleLines.length - 1) * 7.5;
 
   // Start a new page when the next block wouldn't fit above the footer
   const need = (h) => { if (y + h - 5 > 276) { doc.addPage(); y = 22; } };
@@ -365,15 +395,19 @@ export async function buildPdf(v, c, deps = {}) {
 
   // Totals band
   const band = (label, value, fill, bold) => {
-    need(7);
-    doc.setFillColor(...fill); doc.rect(L, y - 4.2, CW, 6.5, 'F');
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.setTextColor(...PINK); doc.text(label, L + 2, y);
-    doc.setTextColor(...INK); doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.text(value, L + 48, y);
-    y += 6.5;
+    doc.setFontSize(10.5); doc.setFont('helvetica', bold ? 'bold' : 'normal');
+    const lines = doc.splitTextToSize(value, CW - 50);
+    const h = 6.5 + (lines.length - 1) * 4.8;
+    need(h);
+    doc.setFillColor(...fill); doc.rect(L, y - 4.2, CW, h, 'F');
+    doc.setTextColor(...INK); doc.text(lines, L + 48, y);
+    doc.setFont('helvetica', 'bold'); doc.setTextColor(...PINK); doc.text(label, L + 2, y);
+    y += h;
   };
   band('Total paid:', gbp(v.total), [253, 230, 243], true);
-  if (v.paidOn || v.paymentMethod) {
-    band('Payment received:', [v.paidOn && longDate(v.paidOn), v.paymentMethod && (/^via\b/i.test(v.paymentMethod) ? v.paymentMethod : `by ${v.paymentMethod}`)].filter(Boolean).join(' '), [228, 245, 246]);
+  const paid = v.paidText ?? (v.paidOnList || [v.paidOn]).filter(Boolean).map(longDate).join(' and ');
+  if (paid || v.paymentMethod) {
+    band('Payment received:', [paid, v.paymentMethod && (/^via\b/i.test(v.paymentMethod) ? v.paymentMethod : `by ${v.paymentMethod}`)].filter(Boolean).join(' '), [228, 245, 246]);
   }
   y += 5;
 
