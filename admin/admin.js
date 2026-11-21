@@ -5,7 +5,8 @@ import { esc, toast, download, setRoleTitle } from '../shared/ui.js';
 import { staffMatches } from '../shared/search.js';
 import { tabAdmin } from './invoice.js';
 import { criticalIssues } from '../shared/staffdetails.js';
-import { accidentsPane, attendancePane } from './today.js';
+import { attendancePane } from './today.js';
+import { tabForms } from './forms.js';
 import { staffFilesCard, openStaffDetails } from './stafffiles.js';
 import { importCard } from './staffimport.js';
 
@@ -92,13 +93,13 @@ function go(tab) {
   document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   view.innerHTML = '<p class="center muted">Loading…</p>';
   ({ today: tabToday, rota: tabRota, entries: tabEntries, requests: tabRequests, reports: tabReports,
-     staff: tabStaff, sites: tabSites, settings: tabSettings, invoices: () => tabAdmin(view, dlg), admin: () => go('invoices') }[tab] || tabToday)();
+     staff: tabStaff, forms: () => tabForms({ view, dlg, me: state.me, staff: state.staff, staffName }), sites: tabSites, settings: tabSettings, invoices: () => tabAdmin(view, dlg), admin: () => go('invoices') }[tab] || tabToday)();
 }
 
 // ── Today ────────────────────────────────────────────────────
 
-// ── Today (sub-tabs: Shifts, Accident forms, Attending children) ──
-const TODAY_TABS = [['shifts', 'Staff shifts'], ['accidents', 'Accident forms'], ['children', 'Attending children']];
+// ── Today (sub-tabs: Staff shifts, Attending children; accident forms are under Forms) ──
+const TODAY_TABS = [['shifts', 'Staff shifts'], ['children', 'Attending children']];
 let todayTab = 'shifts';
 function todayTabsHTML() {
   return `<div class="subtabs">${TODAY_TABS.map(([k, l]) => `<button data-tt="${k}" class="${todayTab === k ? 'active' : ''}">${l}</button>`).join('')}</div>`;
@@ -112,7 +113,7 @@ async function tabToday() {
   wireTodayTabs();
   const ctx = { dlg, me: state.me, staffName };
   const pane = document.getElementById('todayPane');
-  return todayTab === 'accidents' ? accidentsPane(pane, ctx) : attendancePane(pane, ctx);
+  return attendancePane(pane, ctx);
 }
 
 async function todayShifts() {

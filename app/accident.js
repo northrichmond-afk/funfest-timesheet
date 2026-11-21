@@ -1,5 +1,5 @@
-// Staff app › "Accident": record an accident or injury. The parent signs it on the club
-// device at collection (admin Today › Accident forms). Staff can correct or remove their
+// Staff app › Forms › "Accident form": record an accident or injury. The parent signs it on the club
+// device at collection (admin Forms › Accident forms). Staff can correct or remove their
 // own report until it has been signed.
 
 import { sb } from '../shared/supabase.js';

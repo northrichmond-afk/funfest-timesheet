@@ -25,3 +25,6 @@ main { max-width: 520px; }
 .brandbar { justify-content: center; }
 .login h1 { color: var(--purple); }
 @media (max-width: 420px) { .tabs { gap: .3rem; } .tabs button { padding-inline: .3rem; font-size: .88rem; } }
+.subtabs { display: flex; gap: .4rem; margin-bottom: 1rem; flex-wrap: wrap; }
+.subtabs button { font-family: var(--font-nav); font-weight: 600; flex: 1; }
+.subtabs button.active { background: var(--pink); color: #fff; border-color: var(--pink); }
