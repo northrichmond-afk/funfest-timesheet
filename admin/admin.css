@@ -17,3 +17,7 @@ td .actions button { padding: .25rem .55rem; font-size: .82rem; }
 main { max-width: 1400px; }
 .toolbar label input[type=number] { width: 90px; }
 @media print { .topbar, .stripe, nav, .toolbar, button { display: none !important; } .card { border: 0; } }
+.subtabs { display: flex; gap: .4rem; margin-bottom: 1rem; flex-wrap: wrap; }
+.subtabs button { font-family: var(--font-nav); font-weight: 600; }
+.subtabs button.active { background: var(--pink); color: #fff; border-color: var(--pink); }
+@media print { .subtabs { display: none !important; } }
