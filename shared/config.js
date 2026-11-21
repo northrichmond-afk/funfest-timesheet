@@ -6,3 +6,7 @@ export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
 
 export const APP_NAME = 'Fun Fest Timesheet';
 export const TIMEZONE = 'Europe/London';
+
+// Google OAuth client (Google Cloud › APIs & Services › Credentials, the "Web application" client).
+// Public by design. Used by Admin › invoices to send email through Gmail.
+export const GOOGLE_CLIENT_ID = '266910778768-0rq0tr3cebfiakeagl9cduja8mfk70hk.apps.googleusercontent.com';

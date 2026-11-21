@@ -106,3 +106,26 @@ test('clubs have the right Ofsted numbers', async () => {
   assert.equal(CLUBS.hounslow.ofsted, '2909023');
   assert.equal(CLUBS.northrichmond.ofsted, '2818035');
 });
+
+test('email to parent: default wording and a valid MIME message with the PDF attached', async () => {
+  globalThis.localStorage ??= { getItem: () => null, setItem() {} };
+  const { emailText, CLUBS } = await import('../admin/invoice.js');
+  const { buildMime, isEmail } = await import('../admin/gmail.js');
+  const v = { ...extractInvoice(order), invoiceDate: '2026-11-21' };
+  const t = emailText(v, CLUBS.northrichmond);
+  assert.equal(t.subject, 'Invoice / payment receipt #2930 – Fun Fest North Richmond');
+  assert.match(t.text, /^Dear Alex,/);
+  assert.match(t.text, /for Sam Parent \(21st – 22nd December 2026\)\./);
+  assert.match(t.text, /Total paid: £80\.00/);
+  const pdf = new TextEncoder().encode('%PDF-1.4 test');
+  const mime = buildMime({ from: 'club@example.com', fromName: 'Fun Fest North Richmond', to: 'parent@example.com', subject: t.subject, text: t.text, pdfBytes: pdf, filename: 'INVOICE_2930_NorthRichmond.pdf' });
+  assert.match(mime, /^From: Fun Fest North Richmond <club@example\.com>\r\nTo: parent@example\.com\r\nSubject: =\?UTF-8\?B\?/);
+  assert.match(mime, /Content-Disposition: attachment; filename="INVOICE_2930_NorthRichmond\.pdf"/);
+  const att = mime.split('Content-Transfer-Encoding: base64\r\n\r\n')[2].split('\r\n--')[0].replace(/\r\n/g, '');
+  assert.equal(Buffer.from(att, 'base64').toString(), '%PDF-1.4 test');
+  const subj = mime.match(/Subject: =\?UTF-8\?B\?([^?]+)\?=/)[1];
+  assert.equal(Buffer.from(subj, 'base64').toString(), t.subject);
+  assert.ok(isEmail('a.b@example.co.uk'));
+  assert.ok(!isEmail('a@b'));
+  assert.ok(!isEmail('a@b.com, c@d.com'));
+});
