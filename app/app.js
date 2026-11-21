@@ -4,6 +4,7 @@ import { renderLogin, renderNewPassword } from '../shared/login.js';
 import { calcEntry, fmtHours, localDate, localTime, decimalHours, distanceM } from '../shared/hours.js';
 import { esc, toast, setRoleTitle } from '../shared/ui.js';
 import { renderDetails } from './details.js';
+import { renderAccidents } from './accident.js';
 
 const view = document.getElementById('view');
 const dlg = document.getElementById('dlg');
@@ -115,12 +116,14 @@ async function render() {
       <button data-t="today" class="${tab === 'today' ? 'active' : ''}">Today</button>
       <button data-t="hours" class="${tab === 'hours' ? 'active' : ''}">My hours</button>
       <button data-t="details" class="${tab === 'details' ? 'active' : ''}">My details</button>
+      <button data-t="accident" class="${tab === 'accident' ? 'active' : ''}">Accident</button>
     </div>
     <div id="pane"><p class="center muted">Loading…</p></div>
     ${installHint()}`;
   view.querySelectorAll('.tabs button').forEach(b => b.onclick = () => { tab = b.dataset.t; render(); });
   if (tab === 'today') renderToday();
   else if (tab === 'details') renderDetails(document.getElementById('pane'), me);
+  else if (tab === 'accident') renderAccidents(document.getElementById('pane'), me);
   else renderHours();
 }
 
