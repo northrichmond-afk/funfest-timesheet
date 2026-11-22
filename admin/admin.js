@@ -527,7 +527,7 @@ const staffListFilter = { status: 'current', q: '' };
 async function reportStaffList() {
   await loadRef();
   const { data: profiles, error } = await sb.from('staff_profiles')
-    .select('staff_id, full_name, personal_email, phone, address, date_of_birth, dbs_certificate_number, dbs_issue_date, dbs_update_service, dbs_update_service_number, dbs_checked_on');
+    .select('staff_id, full_name, personal_email, phone, address, date_of_birth, dbs_certificate_number, dbs_issue_date, dbs_update_service, dbs_update_service_number, dbs_update_renewal_date, dbs_checked_on');
   const prof = Object.fromEntries((profiles || []).map(p => [p.staff_id, p]));
   const fmtD = d => (d ? new Date(d + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '');
   const f = staffListFilter;
@@ -540,7 +540,7 @@ async function reportStaffList() {
         phone: p.phone || s.phone || '', address: p.address || '', dob: p.date_of_birth || '',
         dbs: p.dbs_certificate_number || '', issued: p.dbs_issue_date || '',
         update: p.dbs_update_service ? (p.dbs_update_service_number || 'Yes') : p.dbs_update_service === false ? 'No' : '',
-        checked: p.dbs_checked_on || '',
+        checked: p.dbs_checked_on || '', renewal: p.dbs_update_renewal_date || '',
       };
     })
     .filter(r => !f.q || [r.name, r.email, r.personal, r.phone, r.address, r.dbs, r.update].join(' ').toLowerCase().includes(f.q.toLowerCase()));
@@ -566,7 +566,7 @@ async function reportStaffList() {
           <td class="small" style="white-space:nowrap">${r.dob ? fmtD(r.dob) : '<span class="muted">—</span>'}</td>
           <td class="small">${r.dbs ? esc(r.dbs) : '<span class="pill warn">Missing</span>'}</td>
           <td class="small">${fmtD(r.issued)}</td>
-          <td class="small">${esc(r.update)}</td>
+          <td class="small">${esc(r.update)}${r.renewal ? `<div class="muted">renews ${fmtD(r.renewal)}</div>` : ''}</td>
           <td class="small">${fmtD(r.checked)}</td>
           <td><button data-sl="${i}" class="small">Details</button></td></tr>`).join('')}
       </table></div>
@@ -576,8 +576,8 @@ async function reportStaffList() {
   $('slStatus').onchange = () => { f.status = $('slStatus').value; reportStaffList(); };
   let t; $('slQ').oninput = () => { clearTimeout(t); t = setTimeout(() => { f.q = $('slQ').value; reportStaffList().then(() => { const q = $('slQ'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }); }, 300); };
   $('slCsv').onclick = () => download(`funfest-staff-list-${today()}.csv`, toCSV([
-    ['Name', 'Login email', 'Personal email', 'Phone', 'Address', 'Date of birth', 'DBS certificate number', 'DBS issue date', 'DBS Update Service ID', 'DBS checked on', 'Status'],
-    ...rows.map(r => [r.name, r.email, r.personal, r.phone, r.address, r.dob, r.dbs, r.issued, r.update, r.checked, r.s.status]),
+    ['Name', 'Login email', 'Personal email', 'Phone', 'Address', 'Date of birth', 'DBS certificate number', 'DBS issue date', 'DBS Update Service ID', 'Update Service renewal date', 'DBS checked on', 'Status'],
+    ...rows.map(r => [r.name, r.email, r.personal, r.phone, r.address, r.dob, r.dbs, r.issued, r.update, r.renewal, r.checked, r.s.status]),
   ]));
   $('slPrint').onclick = () => window.print();
   view.querySelectorAll('[data-sl]').forEach(b => b.onclick = () => openStaffDetails(dlg, rows[+b.dataset.sl].s, { siteName }));
@@ -646,7 +646,7 @@ const criticalFilter = { status: 'current', only: '' };
 async function reportCritical() {
   await loadRef();
   const [{ data: profiles, error }, { data: refDocs }] = await Promise.all([
-    sb.from('staff_profiles').select('staff_id, phone, start_date, dbs_certificate_number, dbs_issue_date, dbs_update_service_number, dbs_expiry_date, ref1_received, ref2_received, ref3_received'),
+    sb.from('staff_profiles').select('staff_id, phone, start_date, dbs_certificate_number, dbs_issue_date, dbs_update_service_number, dbs_update_renewal_date, dbs_expiry_date, ref1_received, ref2_received, ref3_received'),
     sb.from('staff_documents').select('staff_id, kind').eq('kind', 'Reference'),
   ]);
   const prof = Object.fromEntries((profiles || []).map(p => [p.staff_id, p]));

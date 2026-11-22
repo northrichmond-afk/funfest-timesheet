@@ -4,7 +4,7 @@
 
 import { sb } from '../shared/supabase.js';
 import { esc, toast } from '../shared/ui.js';
-import { detailsFormHTML, wireDetailsForm, readDetailsForm, checkDetails, DOC_KINDS } from '../shared/staffdetails.js';
+import { renewalRequestOpen, detailsFormHTML, wireDetailsForm, readDetailsForm, checkDetails, DOC_KINDS } from '../shared/staffdetails.js';
 
 const BUCKET = 'staff-docs';
 const MAX_MB = 15;
@@ -25,6 +25,9 @@ export async function renderDetails(pane, me) {
   const p = profile || { full_name: me.name, phone: me.phone, personal_email: me.email };
 
   pane.innerHTML = `
+    ${renewalRequestOpen(profile || {}) ? `<div class="card msg warn">📨 <b>The office has asked for your DBS Update Service renewal date.</b>
+      Sign in to your Update Service account at <a href="https://www.gov.uk/dbs-update-service" target="_blank" rel="noopener">gov.uk/dbs-update-service</a>
+      to find it, then add it below under <b>DBS</b> and save. If your subscription has lapsed, please renew it or tell the office.</div>` : ''}
     <div class="card">
       <h2>Certificates &amp; documents</h2>
       <p class="small muted">Upload your DBS certificate, first aid, safeguarding and other certificates. Take a photo or choose a PDF. They go straight to the office.</p>

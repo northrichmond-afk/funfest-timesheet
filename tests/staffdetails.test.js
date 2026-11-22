@@ -63,3 +63,14 @@ test('date of birth is a staff field with sanity checks', async () => {
   assert.match(checkDetails({ date_of_birth: '2024-04-02' }).join(), /date of birth/);
   assert.match(checkDetails({ dbs_update_service: true, dbs_update_service_number: 'C1' }).join(), /date of birth/);
 });
+
+test('DBS Update Service renewal: request status and lapsed subscription', async () => {
+  const { renewalRequestOpen, criticalIssues, renewalRequestEmail } = await import('../shared/staffdetails.js');
+  assert.equal(renewalRequestOpen({}), false);
+  assert.equal(renewalRequestOpen({ dbs_renewal_requested_at: '2026-11-22T10:00:00Z' }, '2026-11-22'), true);
+  assert.equal(renewalRequestOpen({ dbs_renewal_requested_at: '2026-11-22T10:00:00Z', dbs_update_renewal_date: '2027-03-01' }, '2026-11-22'), false);
+  assert.equal(renewalRequestOpen({ dbs_renewal_requested_at: '2026-11-22T10:00:00Z', dbs_update_renewal_date: '2026-01-01' }, '2026-11-22'), true);
+  const lapsed = criticalIssues({ dbs_certificate_number: '001234567890', dbs_update_service_number: 'C1', dbs_update_renewal_date: '2026-10-01' }, 0, '2026-11-22');
+  assert.match(lapsed.map(x => x.text).join(), /lapsed 2026-10-01/);
+  assert.match(renewalRequestEmail('Kaliya Hersi', 'https://x/app/').text, /^Hi Kaliya,[\s\S]*https:\/\/x\/app\//);
+});

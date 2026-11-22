@@ -4,8 +4,9 @@
 // "Staff details - <name>.pdf" and refreshed whenever the person changes them.
 
 import { sb } from '../shared/supabase.js';
+import { gmailToken, sendGmail, isEmail } from './gmail.js';
 import { esc, toast } from '../shared/ui.js';
-import { detailsViewHTML, detailsFormHTML, wireDetailsForm, readDetailsForm, checkDetails, SECTIONS, OFFICE_SECTIONS, OFFICE_FIELDS,
+import { renewalRequestOpen, renewalRequestEmail, detailsViewHTML, detailsFormHTML, wireDetailsForm, readDetailsForm, checkDetails, SECTIONS, OFFICE_SECTIONS, OFFICE_FIELDS,
   displayValue, matchFolder, safeName, docFileName, detailsFileName, DOC_KINDS } from '../shared/staffdetails.js';
 import { loadJsPDF, imageData } from './invoice.js';
 
@@ -236,6 +237,59 @@ function folderHTML(r) {
 
 const row = (k, v) => `<tr><th style="width:40%;font-weight:600">${esc(k)}</th><td>${v || '<span class="muted">—</span>'}</td></tr>`;
 
+// ── Ask a staff member for their DBS Update Service renewal (expiry) date ──
+// Sets dbs_renewal_requested_at (the staff app then shows a request on My details) and,
+// optionally, emails them from the club's Google account through Gmail.
+const APP_URL = new URL('../app/', location.href).href;
+function clubSender() {
+  try { return JSON.parse(localStorage.getItem('ff.invoice.club.northrichmond'))?.sendFrom || ''; } catch { return ''; }
+}
+function requestRenewal(dlg, s, p, done) {
+  const to = [p?.personal_email, s.email].find(isEmail) || '';
+  const from = clubSender();
+  const m = renewalRequestEmail(p?.full_name || s.name, APP_URL);
+  const box = document.createElement('div');
+  box.className = 'card';
+  box.innerHTML = `<form class="stack">
+    <h3 style="margin:0">Request DBS Update Service renewal date from ${esc(s.name)}</h3>
+    <p class="small muted">${esc(s.name.split(' ')[0])} will see the request on <b>My details</b> in the staff app until they add the date.</p>
+    <label class="check"><input type="checkbox" name="mail" ${to ? 'checked' : ''}> <span>Also email it${from ? ` from <b>${esc(from)}</b>` : ''} through Gmail</span></label>
+    <label>To<input name="to" type="email" value="${esc(to)}"></label>
+    <label>Subject<input name="subject" value="${esc(m.subject)}"></label>
+    <label>Message<textarea name="text" rows="11">${esc(m.text)}</textarea></label>
+    <div class="msgs"></div>
+    <div style="display:flex;gap:.5rem"><button class="primary">Send request</button><button type="button" id="rqX">Cancel</button></div>
+  </form>`;
+  const anchor = dlg.querySelector('#reqRenewal').closest('table');
+  anchor.after(box);
+  box.scrollIntoView({ block: 'nearest' });
+  const form = box.querySelector('form');
+  box.querySelector('#rqX').onclick = () => box.remove();
+  form.onsubmit = async (ev) => {
+    ev.preventDefault();
+    const out = form.querySelector('.msgs');
+    const btn = form.querySelector('button.primary');
+    const mail = form.querySelector('[name=mail]').checked;
+    const v = n => form.querySelector(`[name=${n}]`).value.trim();
+    if (mail && !isEmail(v('to'))) { out.innerHTML = '<div class="msg bad">Enter a valid email address, or untick email.</div>'; return; }
+    btn.disabled = true;
+    try {
+      if (mail) {
+        const { token, email } = await gmailToken(from || undefined);   // first, while the click still counts (Google pop-up)
+        await sendGmail({ token, from: from || email, fromName: 'Fun Fest', to: v('to'), subject: v('subject'), text: form.querySelector('[name=text]').value });
+      }
+      const { error } = await sb.from('staff_profiles').upsert(
+        { staff_id: s.id, ...(p ? {} : { full_name: s.name }), dbs_renewal_requested_at: new Date().toISOString() }, { onConflict: 'staff_id' });
+      if (error) throw error;
+      toast(mail ? `Request emailed to ${v('to')} ✓` : 'Request added to their My details ✓', 5000);
+      done();
+    } catch (e) {
+      btn.disabled = false;
+      out.innerHTML = `<div class="msg bad">${esc(e.message)}</div>`;
+    }
+  };
+}
+
 // ── Per-person dialog (Staff tab › Details & files) ───────────
 
 export async function openStaffDetails(dlg, s, ctx = {}) {
@@ -274,6 +328,9 @@ export async function openStaffDetails(dlg, s, ctx = {}) {
         ${row('Start date', p?.start_date ? esc(displayValue('date', p.start_date)) : '')}
         ${row('DBS certificate', dbsLine)}
         ${row('DBS Update Service', p?.dbs_update_service ? '✅ ' + esc(p.dbs_update_service_number || '') : p?.dbs_update_service === false ? 'Not registered' : '')}
+        ${row('Update Service renewal date', `${p?.dbs_update_renewal_date ? esc(displayValue('date', p.dbs_update_renewal_date)) + (p.dbs_update_renewal_date < new Date().toISOString().slice(0, 10) ? ' <span class="pill bad">Lapsed</span>' : '') : '<span class="muted">not known</span>'}
+          ${p?.dbs_renewal_requested_at ? `<div class="small muted">Requested ${fmtDay(p.dbs_renewal_requested_at)}${renewalRequestOpen(p) ? ' · waiting for reply' : ''}</div>` : ''}
+          <div style="margin-top:.3rem"><button type="button" id="reqRenewal" class="small">📨 Request renewal date</button></div>`)}
         ${row('References received', [p?.ref1_received && '1: ' + displayValue('date', p.ref1_received), p?.ref2_received && '2: ' + displayValue('date', p.ref2_received)].filter(Boolean).map(esc).join(' · '))}
         ${row('Right to work checked', p?.right_to_work_checked_on ? esc(displayValue('date', p.right_to_work_checked_on)) : '')}
         ${row('Location consent', s.consent_location_at ? fmtDay(s.consent_location_at) : '')}
@@ -319,6 +376,8 @@ export async function openStaffDetails(dlg, s, ctx = {}) {
     });
   };
   showFolder(false);
+
+  dlg.querySelector('#reqRenewal').onclick = () => requestRenewal(dlg, s, p, again);
 
   dlg.querySelector('#pdf').onclick = async () => {
     const doc = await detailsPdf(p || { updated_at: new Date().toISOString() }, s.name);

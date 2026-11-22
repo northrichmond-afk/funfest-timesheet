@@ -5,6 +5,7 @@ import { calcEntry, fmtHours, localDate, localTime, decimalHours, distanceM } fr
 import { esc, toast, setRoleTitle } from '../shared/ui.js';
 import { renderDetails } from './details.js';
 import { renderForms } from './forms.js';
+import { renewalRequestOpen } from '../shared/staffdetails.js';
 
 const view = document.getElementById('view');
 const dlg = document.getElementById('dlg');
@@ -118,8 +119,18 @@ async function render() {
       <button data-t="details" class="${tab === 'details' ? 'active' : ''}">My details</button>
       <button data-t="forms" class="${tab === 'forms' ? 'active' : ''}">Forms</button>
     </div>
+    <div id="notice"></div>
     <div id="pane"><p class="center muted">Loading…</p></div>
     ${installHint()}`;
+  // Office asked for something on My details (e.g. the DBS Update Service renewal date)
+  sb.from('staff_profiles').select('dbs_renewal_requested_at,dbs_update_renewal_date').eq('staff_id', me.id).maybeSingle()
+    .then(({ data }) => {
+      if (!renewalRequestOpen(data || {})) return;
+      const b = view.querySelector('[data-t=details]');
+      if (b && !b.querySelector('.dot')) b.insertAdjacentHTML('beforeend', ' <span class="dot" title="The office has asked for something">●</span>');
+      if (tab === 'today') view.querySelector('#notice').innerHTML = ('<div class="card msg warn" id="reqNote">📨 The office has asked for your <b>DBS Update Service renewal date</b>. Please add it under <b>My details › DBS</b>. <button type="button" class="small" id="goDetails">Open My details</button></div>');
+      view.querySelector('#goDetails')?.addEventListener('click', () => { tab = 'details'; render(); });
+    }).catch(() => {});
   view.querySelectorAll('.tabs button').forEach(b => b.onclick = () => { tab = b.dataset.t; render(); });
   if (tab === 'today') renderToday();
   else if (tab === 'details') renderDetails(document.getElementById('pane'), me);

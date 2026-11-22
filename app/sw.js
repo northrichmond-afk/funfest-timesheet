@@ -1,5 +1,5 @@
 // Caches the app shell so it opens without signal. Never caches Supabase API calls.
-const CACHE = 'ff-shell-v14';
+const CACHE = 'ff-shell-v15';
 const SHELL = [
   './', './index.html', './app.js', './details.js', './accident.js', './forms.js', './app.css', './manifest.webmanifest', './icon-192.png', './apple-touch-icon.png',
   '../shared/styles.css', '../shared/config.js', '../shared/supabase.js', '../shared/hours.js', '../shared/ui.js', '../shared/search.js', '../shared/login.js', '../shared/native.js', '../shared/staffdetails.js', '../shared/accidents.js', '../shared/suitability.js', '../shared/signature.js', '../shared/brand/fun-fest-logo.png', '../shared/brand/favicon.png',
