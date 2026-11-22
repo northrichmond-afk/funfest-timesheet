@@ -1,4 +1,4 @@
-// Admin › Reports › Critical info › "Send reminders": emails each staff member the list of things
+// Admin › Reports › Missing info › "Send reminders": emails each staff member the list of things
 // they need to update (the same notifications they see in the staff app), through Gmail.
 
 import { sb } from '../shared/supabase.js';
