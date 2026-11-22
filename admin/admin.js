@@ -10,6 +10,7 @@ import { tabForms } from './forms.js';
 import { staffFilesCard, openStaffDetails } from './stafffiles.js';
 import { dbsStatusHTML, dbsCheckForm } from './dbscheck.js';
 import { remindersForm } from './reminders.js';
+import { gmailToken, sendGmail, isEmail } from './gmail.js';
 import { importCard } from './staffimport.js';
 
 const view = document.getElementById('view');
@@ -948,16 +949,33 @@ Any problems, just let me know.
 Fun Fest`;
 }
 
+// Invite text as HTML: the app link becomes a clickable hyperlink
+function inviteHTML(text) {
+  const link = `<a href="${INVITE_URL}">${INVITE_URL}</a>`;
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;white-space:pre-wrap">${esc(text).split(esc(INVITE_URL)).join(link)}</div>`;
+}
+function inviteSender() {
+  try { return JSON.parse(localStorage.getItem('ff.invoice.club.northrichmond'))?.sendFrom || ''; } catch { return ''; }
+}
+
 function invite(s) {
+  const subject = 'Your Fun Fest Timesheet app';
   const text = inviteText(s);
-  const mailto = `mailto:${encodeURIComponent(s.email)}?subject=${encodeURIComponent('Your Fun Fest Timesheet app')}&body=${encodeURIComponent(text)}`;
+  const mailto = `mailto:${encodeURIComponent(s.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`;
   const wa = s.phone ? `https://wa.me/${s.phone.replace(/\D/g, '').replace(/^0/, '44')}?text=${encodeURIComponent(text)}` : null;
+  const from = inviteSender();
+  const placeholder = /\.invalid$/i.test(s.email);
   dlg.innerHTML = `
     <form method="dialog" class="stack">
       <h2>Invite ${esc(s.name)}</h2>
-      <textarea rows="12" readonly>${esc(text)}</textarea>
-      <div class="row">
-        <a class="btn" href="${mailto}">Open in email</a>
+      <label>To<input name="to" type="email" value="${placeholder ? '' : esc(s.email)}" placeholder="their email address"></label>
+      ${placeholder ? '<p class="small"><span class="pill warn">No email on file</span> Enter their address above (and update their login email under Edit).</p>' : ''}
+      <label>Subject<input name="subject" value="${esc(subject)}"></label>
+      <div class="invite-preview" style="border:1px solid var(--line);border-radius:10px;padding:.8rem 1rem;max-height:46vh;overflow:auto;background:#fff">${inviteHTML(text)}</div>
+      <div class="msgs"></div>
+      <div class="row" style="flex-wrap:wrap">
+        <button type="button" id="invSend" class="primary">📧 Send email${from ? ` from ${esc(from)}` : ''}</button>
+        <a class="btn" href="${mailto}">Open in my email app</a>
         ${wa ? `<a class="btn" href="${wa}" target="_blank" rel="noopener">Send on WhatsApp</a>` : ''}
         <button type="button" id="cp">Copy text</button>
         <button value="close">Close</button>
@@ -965,6 +983,23 @@ function invite(s) {
     </form>`;
   dlg.showModal();
   document.getElementById('cp').onclick = () => navigator.clipboard.writeText(text).then(() => toast('Copied'));
+  document.getElementById('invSend').onclick = async (ev) => {
+    const btn = ev.currentTarget;
+    const out = dlg.querySelector('.msgs');
+    const to = dlg.querySelector('[name=to]').value.trim();
+    const subj = dlg.querySelector('[name=subject]').value.trim() || subject;
+    if (!isEmail(to) || /\.invalid$/i.test(to)) { out.innerHTML = '<div class="msg bad">Enter a valid email address.</div>'; return; }
+    btn.disabled = true;
+    try {
+      const { token, email } = await gmailToken(from || undefined);   // first, while the click still counts (Google pop-up)
+      await sendGmail({ token, from: from || email, fromName: 'Fun Fest', to, subject: subj, text, html: inviteHTML(text) });
+      dlg.close();
+      toast(`Invite emailed to ${to} ✓`, 5000);
+    } catch (e) {
+      btn.disabled = false;
+      out.innerHTML = `<div class="msg bad">${esc(e.message)}</div>`;
+    }
+  };
 }
 
 function editStaff(s, after = tabStaff) {

@@ -137,3 +137,13 @@ test('plain email without attachment', async () => {
   assert.doesNotMatch(m, /multipart|application\/pdf/);
   assert.equal(Buffer.from(m.split('\r\n\r\n')[1].replace(/\s/g, ''), 'base64').toString(), 'Hello');
 });
+
+test('html email with plain-text alternative', async () => {
+  const { buildMime } = await import('../admin/gmail.js');
+  const m = buildMime({ from: 'a@b.co', to: 'c@d.co', subject: 'Hi', text: 'Open https://bit.ly/x', html: '<a href="https://bit.ly/x">https://bit.ly/x</a>' });
+  assert.match(m, /multipart\/alternative/);
+  assert.match(m, /Content-Type: text\/plain/);
+  assert.match(m, /Content-Type: text\/html/);
+  const parts = m.split(/--ff_\w+/);
+  assert.match(Buffer.from(parts[2].split('\r\n\r\n')[1].replace(/\s/g, ''), 'base64').toString(), /<a href="https:\/\/bit.ly\/x">/);
+});
