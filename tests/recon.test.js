@@ -143,3 +143,21 @@ test('reconcile: Hounslow TFC paid via a bulk MRYJ transfer', () => {
   const r = reconcile({ orders: [ord(301, 'hounslow', 60), ord(302, 'northrichmond', 30), ord(303, 'hounslow', 60)], payments: [tfc(301, 'hounslow', 60), tfc(302, 'northrichmond', 30), tfc(303, 'hounslow', 60)], bank }, { today: '2026-09-30' });
   assert.deepEqual(r.rows.map(x => [x.order.order_id, x.status, x.received]), [[301, 'paid', 60], [302, 'missing', 0], [303, 'part', 40]]);
 });
+
+test('reconcile: Childcare Grant arrives as NATIONAL SAVINGS; referenced TFC gets first pick', () => {
+  const bank = parseHsbcCsv(`Date,Type,Description,Paid Out,Paid In,Balance
+29 Oct 2026,CR,"NATIONAL SAVINGS A AHUT39574",,24.00,
+30 Oct 2026,CR,"NATIONAL SAVINGS A TABU12345",,24.00,`, 's');
+  const grant = compactPonchoPayment({ uuid: 'g', reference: 'PP-g', amount: 2400, createdDate: '2026-10-28T13:20:00Z', completedDate: '2026-10-28T13:21:00Z',
+    integration: { metadata: '5950', location: 'https://fun-fest.co.uk/hounslow' },
+    subsidies: [{ scheme: 'childcare-voucher', amount: 2400, refunds: [], payments: [], voucherProvider: { name: 'Childcare Grant Payment Service' } }] });
+  const tfc = compactPonchoPayment({ uuid: 't', reference: 'PP-t', amount: 2400, createdDate: '2026-10-28T20:00:00Z', completedDate: '2026-10-28T20:00:00Z',
+    integration: { metadata: '5951', location: 'https://fun-fest.co.uk/hounslow' },
+    subsidies: [{ scheme: 'tax-free-childcare', amount: 2400, refunds: [], payments: [], childReferenceCode: 'AHUT39574TFC' }] });
+  const ord = id => ({ site: 'hounslow', order_id: id, number: String(id), status: 'completed', created_at: '2026-10-28T13:20:00Z', total: 24, refunded: 0 });
+  const r = reconcile({ orders: [ord(5950), ord(5951)], payments: [grant, tfc], bank }, { today: '2026-11-22' });
+  const by = Object.fromEntries(r.rows.map(x => [x.order.order_id, x]));
+  assert.equal(by[5951].subs[0].credits[0].credit.description, 'NATIONAL SAVINGS A AHUT39574');
+  assert.equal(by[5950].status, 'paid');
+  assert.equal(by[5950].subs[0].credits[0].credit.description, 'NATIONAL SAVINGS A TABU12345');
+});

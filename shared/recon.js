@@ -240,6 +240,11 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
   const tfcPool = refs => credits.filter(c => c.kind === 'tfc' && refs.some(r => c.description.toUpperCase().includes(r)));
   const voucherPool = key => credits.filter(c => c.kind === 'voucher' && [key, 'other'].includes(bankVoucherKey(c.description)));
   const exactTfc = (amount, after) => credits.filter(c => c.kind === 'tfc' && c.left > 0.004 && same(c.left, amount) && c.date >= after).slice(0, 1);
+  // Tax-Free Childcare without a child reference, and the Childcare Grant (paid through the same
+  // government childcare service, so it also arrives as "NATIONAL SAVINGS …"), are matched by amount
+  // after everything with a reference has had its pick of the credits.
+  const viaNsi = s => (s.scheme === 'tax-free-childcare' && !tfcRefs(s.childRef).length) || (s.scheme === 'childcare-voucher' && voucherKey(s.provider) === 'grant');
+  allSubs.sort((a, b) => viaNsi(a.s) - viaNsi(b.s));
   for (const { p, s } of allSubs) {
     const net = pounds(s.amount - (s.refunded || 0));
     const r = { ...s, net, state: 'awaiting', covered: 0, credits: [], payout: null };
@@ -253,9 +258,9 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
       }
     } else if (toDay(p.created_at) >= addDays(from, -60)) {
       const refs = tfcRefs(s.childRef);
-      const pool = s.scheme !== 'tax-free-childcare' ? voucherPool(voucherKey(s.provider))
-        : refs.length ? tfcPool(refs)
-          : p.completed_at ? exactTfc(net, addDays(p.created_at, -7)) : [];   // no child reference: one credit of exactly that amount
+      const pool = viaNsi(s) ? (p.completed_at ? [...exactTfc(net, addDays(p.created_at, -7)), ...(s.scheme === 'childcare-voucher' ? voucherPool('grant') : [])] : [])
+        : s.scheme === 'tax-free-childcare' ? tfcPool(refs)
+          : voucherPool(voucherKey(s.provider));
       const t = take(pool, net, addDays(p.created_at, -7));
       // Hounslow Tax-Free Childcare / vouchers that went to the previous owner arrive in bulk from MRYJ Ltd
       if (t.covered < net - 0.01 && p.site === 'hounslow') {
