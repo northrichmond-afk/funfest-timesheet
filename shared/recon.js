@@ -107,6 +107,18 @@ export function bankKind(t) {
   return 'other';
 }
 const bankVoucherKey = d => (VOUCHER_PROVIDERS.find(([, , re]) => re.test(d || '')) || ['other'])[0];
+// A Tax-Free Childcare / Childcare Grant reference starts with the child's first initial and the
+// first three letters of their surname (e.g. AHUT39574 for A… HUTsan): work those letters out from names.
+export function refStems(names) {
+  const out = new Set();
+  for (const n of String(names || '').split(/[,;&]| and /i)) {
+    const w = n.trim().toUpperCase().replace(/[^A-Z\s-]/g, '').split(/[\s-]+/).filter(Boolean);
+    if (w.length < 2) continue;
+    const sur = w.at(-1).slice(0, 3);
+    if (sur.length === 3) out.add(w[0][0] + sur);
+  }
+  return [...out];
+}
 const tfcRefs = s => String(s || '').toUpperCase().split(/[,\s]+/).map(r => r.replace(/TFC$/, '')).filter(r => /^[A-Z]{4}\d{5}$/.test(r));
 
 // ── PonchoPay ─────────────────────────────────────────────────
@@ -238,8 +250,14 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
   const pays = payments.map(x => ({ ...x, subs: [] }));
   const allSubs = pays.flatMap(p => (p.subsidies || []).map(s => ({ p, s }))).sort((a, b) => String(a.p.created_at).localeCompare(String(b.p.created_at)));
   const tfcPool = refs => credits.filter(c => c.kind === 'tfc' && refs.some(r => c.description.toUpperCase().includes(r)));
+  const stemPool = stems => credits.filter(c => c.kind === 'tfc' && stems.some(st => new RegExp(`\\b${st}\\d{5}\\b`).test(c.description.toUpperCase())));
   const voucherPool = key => credits.filter(c => c.kind === 'voucher' && [key, 'other'].includes(bankVoucherKey(c.description)));
   const exactTfc = (amount, after) => credits.filter(c => c.kind === 'tfc' && c.left > 0.004 && same(c.left, amount) && c.date >= after).slice(0, 1);
+  // Tax-Free Childcare without a child reference, and the Childcare Grant (paid through the same
+  // government childcare service, so it also arrives as "NATIONAL SAVINGS …"), are matched by amount
+  // after everything with a reference has had its pick of the credits.
+  const viaNsi = s => (s.scheme === 'tax-free-childcare' && !tfcRefs(s.childRef).length) || (s.scheme === 'childcare-voucher' && voucherKey(s.provider) === 'grant');
+  allSubs.sort((a, b) => viaNsi(a.s) - viaNsi(b.s));
   for (const { p, s } of allSubs) {
     const net = pounds(s.amount - (s.refunded || 0));
     const r = { ...s, net, state: 'awaiting', covered: 0, credits: [], payout: null };
@@ -253,9 +271,10 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
       }
     } else if (toDay(p.created_at) >= addDays(from, -60)) {
       const refs = tfcRefs(s.childRef);
-      const pool = s.scheme !== 'tax-free-childcare' ? voucherPool(voucherKey(s.provider))
-        : refs.length ? tfcPool(refs)
-          : p.completed_at ? exactTfc(net, addDays(p.created_at, -7)) : [];   // no child reference: one credit of exactly that amount
+      const stems = refStems(p.children);
+      const pool = viaNsi(s) ? (p.completed_at ? [...(stems.length ? stemPool(stems) : []), ...exactTfc(net, addDays(p.created_at, -7)), ...(s.scheme === 'childcare-voucher' ? voucherPool('grant') : [])] : [])
+        : s.scheme === 'tax-free-childcare' ? tfcPool(refs)
+          : voucherPool(voucherKey(s.provider));
       const t = take(pool, net, addDays(p.created_at, -7));
       // Hounslow Tax-Free Childcare / vouchers that went to the previous owner arrive in bulk from MRYJ Ltd
       if (t.covered < net - 0.01 && p.site === 'hounslow') {
