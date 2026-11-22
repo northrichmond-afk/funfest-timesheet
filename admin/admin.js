@@ -10,6 +10,7 @@ import { tabForms } from './forms.js';
 import { staffFilesCard, openStaffDetails } from './stafffiles.js';
 import { dbsStatusHTML, dbsCheckForm } from './dbscheck.js';
 import { remindersForm } from './reminders.js';
+import { tabPayments, listenForPonchoPay } from './payments.js';
 import { gmailToken, sendGmail, isEmail } from './gmail.js';
 import { importCard } from './staffimport.js';
 
@@ -75,6 +76,10 @@ async function boot() {
   document.getElementById('nav').classList.remove('hidden');
   document.querySelectorAll('#nav button').forEach(b => b.onclick = () => go(b.dataset.tab));
   await loadRef();
+  if (location.hash === '#payments-import') {          // opened by the "Fun Fest sync" bookmark on PonchoPay
+    listenForPonchoPay(() => go('payments'));
+    return go('payments');
+  }
   go(location.hash.slice(1) || 'today');
 }
 
@@ -96,7 +101,7 @@ function go(tab) {
   document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   view.innerHTML = '<p class="center muted">Loading…</p>';
   ({ today: tabToday, rota: tabRota, entries: tabEntries, requests: tabRequests, reports: tabReports,
-     staff: tabStaff, forms: () => tabForms({ view, dlg, me: state.me, staff: state.staff, staffName }), sites: tabSites, settings: tabSettings, invoices: () => tabAdmin(view, dlg), admin: () => go('invoices') }[tab] || tabToday)();
+     staff: tabStaff, forms: () => tabForms({ view, dlg, me: state.me, staff: state.staff, staffName }), sites: tabSites, settings: tabSettings, invoices: () => tabAdmin(view, dlg), payments: () => tabPayments({ view, dlg, me: state.me }), admin: () => go('invoices') }[tab] || tabToday)();
 }
 
 // ── Today ────────────────────────────────────────────────────
