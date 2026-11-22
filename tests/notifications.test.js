@@ -26,7 +26,7 @@ test('Update Service problems', () => {
 
 test('old DBS without Update Service, overdue declaration', () => {
   const p = { full_name: 'A', date_of_birth: '1990-01-01', dbs_certificate_number: '001', dbs_issue_date: '2022-01-01' };
-  assert.deepEqual(keys(p, { lastDeclarationAt: '2025-10-01T10:00:00Z' }), ['dbs_old', 'suitability']);
+  assert.deepEqual(keys(p, { lastDeclarationAt: '2025-10-01T10:00:00Z' }), ['dbs_update_id', 'dbs_old', 'suitability']);
 });
 
 test('reminder email lists the items', () => {

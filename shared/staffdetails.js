@@ -168,6 +168,7 @@ export const REFS_RULE_FROM = '2026-09-01';
 export function criticalIssues(p = {}, docs = 0, todayIso = new Date().toISOString().slice(0, 10)) {
   const out = [];
   if (!p.dbs_certificate_number && !p.dbs_update_service_number) out.push({ key: 'dbs', text: 'No DBS reference' });
+  if (!p.dbs_update_service_number) out.push({ key: 'noupdate', text: p.dbs_update_service ? 'Update Service ID not entered' : 'No DBS Update Service ID' });
   const threeYears = d => { const x = new Date(d + 'T12:00:00Z'); x.setUTCFullYear(x.getUTCFullYear() + 3); return x.toISOString().slice(0, 10); };
   if (p.dbs_status === 'NEW_INFO') out.push({ key: 'dbsstatus', text: 'DBS status check: new information, ask for a new DBS' });
   else if (p.dbs_status === 'NO_MATCH') out.push({ key: 'dbsstatus', text: 'DBS status check: no match on the Update Service' });
