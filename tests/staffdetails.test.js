@@ -22,10 +22,10 @@ test('file names for the staff folder', () => {
 });
 
 test('checks NI, DBS and Update Service numbers', () => {
-  assert.deepEqual(checkDetails({ ni_number: 'AB 12 34 56 C', dbs_certificate_number: '001234567890', dbs_update_service: true, dbs_update_service_number: 'C0A1B2C3D4E5' }), []);
+  assert.deepEqual(checkDetails({ ni_number: 'AB 12 34 56 C', dbs_certificate_number: '001234567890', dbs_update_service: true, dbs_update_service_number: 'C0A1B2C3D4E5', date_of_birth: '1990-05-01' }), []);
   assert.equal(checkDetails({ ni_number: 'XX123' }).length, 1);
   assert.equal(checkDetails({ dbs_certificate_number: '12345' }).length, 1);
-  assert.equal(checkDetails({ dbs_update_service: true }).length, 1);
+  assert.equal(checkDetails({ dbs_update_service: true, date_of_birth: '1990-05-01' }).length, 1);
 });
 
 test('form has personal details, qualifications/training and DBS only, and escapes values', () => {
@@ -54,4 +54,12 @@ test('critical information rules', async () => {
   assert.deepEqual(keys({ dbs_certificate_number: '001', start_date: '2026-09-01', ref1_received: '2026-08-01' }), ['refs']);
   assert.equal(criticalIssues({ dbs_certificate_number: '001', start_date: '2026-10-01', ref1_received: 'x', ref2_received: 'y' }, 2, T)[0].text, '2 of 3 references received (2 reference files uploaded)');
   assert.deepEqual(keys({ dbs_certificate_number: '001', start_date: '2026-10-01', ref1_received: 'x', ref2_received: 'y', ref3_received: 'z' }), []);
+});
+
+test('date of birth is a staff field with sanity checks', async () => {
+  const { SECTIONS, checkDetails } = await import('../shared/staffdetails.js');
+  assert.ok(SECTIONS[0].fields.some(f => f[0] === 'date_of_birth'));
+  assert.deepEqual(checkDetails({ date_of_birth: '1995-04-02' }), []);
+  assert.match(checkDetails({ date_of_birth: '2024-04-02' }).join(), /date of birth/);
+  assert.match(checkDetails({ dbs_update_service: true, dbs_update_service_number: 'C1' }).join(), /date of birth/);
 });
