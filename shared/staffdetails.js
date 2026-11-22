@@ -7,6 +7,7 @@ import { esc } from './ui.js';
 export const SECTIONS = [
   { title: 'Personal details', fields: [
     ['full_name', 'Full name', 'text', { required: true, autocomplete: 'name' }],
+    ['date_of_birth', 'Date of birth (as on your DBS certificate)', 'date', { autocomplete: 'bday' }],
     ['address', 'Address', 'textarea', { rows: 3, autocomplete: 'street-address' }],
     ['personal_email', 'Email address', 'email', { autocomplete: 'email' }],
     ['phone', 'Phone number', 'tel', { autocomplete: 'tel' }],
@@ -144,6 +145,10 @@ export function checkDetails(row) {
   if (nino && !/^[A-CEGHJ-PR-TW-Z][A-CEGHJ-NPR-TW-Z]\d{6}[A-D]$/.test(nino)) out.push('The NI number doesn’t look right (2 letters, 6 numbers, 1 letter).');
   if (row.dbs_certificate_number && !/^\d{12}$/.test(row.dbs_certificate_number)) out.push('A DBS certificate number is 12 digits.');
   if (row.dbs_update_service && !row.dbs_update_service_number) out.push('Add your DBS Update Service ID number.');
+  if (row.date_of_birth) {
+    const age = (Date.now() - new Date(row.date_of_birth + 'T12:00:00Z')) / 31557600000;
+    if (!(age >= 14 && age <= 90)) out.push('Please check your date of birth.');
+  } else if (row.dbs_update_service) out.push('Add your date of birth: the office needs it to check your DBS on the Update Service.');
   return out;
 }
 
