@@ -270,6 +270,7 @@ export async function openStaffDetails(dlg, s, ctx = {}) {
         ${row('Role', s.role === 'admin' ? 'Admin' : 'Staff')}
         ${row('Default venue', esc(ctx.siteName ? (s.default_site_id ? ctx.siteName(s.default_site_id) : '') : ''))}
         ${row('Hourly rate', s.hourly_rate ? '£' + Number(s.hourly_rate).toFixed(2) : '')}
+        ${row('Date of birth', p?.date_of_birth ? esc(displayValue('date', p.date_of_birth)) : '<span class="muted">not given yet</span>')}
         ${row('Start date', p?.start_date ? esc(displayValue('date', p.start_date)) : '')}
         ${row('DBS certificate', dbsLine)}
         ${row('DBS Update Service', p?.dbs_update_service ? '✅ ' + esc(p.dbs_update_service_number || '') : p?.dbs_update_service === false ? 'Not registered' : '')}
