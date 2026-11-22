@@ -702,7 +702,7 @@ async function reportCritical() {
           <td>${r.issues.map(x => `<span class="pill ${pillCls[x.key]}" style="margin:0 .2rem .2rem 0">${esc(x.text)}</span>`).join('')}</td>
           <td><button class="small" data-cr="${i}">Details</button></td></tr>`).join('')}
       </table></div>` : '<p>✅ Nobody is missing critical information.</p>'}
-      <p class="small muted">Rules: <b>DBS reference</b> = certificate number or Update Service ID. <b>Update Service ID</b> = everyone needs one. <b>DBS expired</b> = the DBS expiry / renewal date has passed, or with no expiry date, a certificate over 3 years old with no Update Service ID.
+      <p class="small muted">Rules: <b>DBS reference</b> = certificate number or Update Service ID. <b>Update Service ID</b> = everyone needs one. <b>DBS expired</b> = the DBS expiry / renewal date has passed, or with no expiry date, a certificate over 3 years old with no Update Service ID (ignored when the last Update Service check said “Current: no new information”).
         <b>DBS status check</b> = the last Update Service check found new information or no match. <b>3 references</b> applies to staff with a start date on or after 1 September 2026 and counts the “Reference received” dates in the office record.
         ${noStart ? `${noStart} ${noStart === 1 ? 'person has' : 'people have'} no start date, so the references rule can’t be checked for them.` : ''}
         Fix anything under <b>Details › Office record › Edit</b>.</p>

@@ -165,6 +165,9 @@ export function detailsViewHTML(p = {}, sections = SECTIONS) {
 // ── Critical information (Reports › Critical info) ─────────
 
 export const REFS_RULE_FROM = '2026-09-01';
+/** Last Update Service status check said the certificate is current (no new information). */
+export const dbsCurrent = (p = {}) => p.dbs_status === 'BLANK_NO_NEW_INFO' || p.dbs_status === 'NON_BLANK_NO_NEW_INFO';
+
 export function criticalIssues(p = {}, docs = 0, todayIso = new Date().toISOString().slice(0, 10)) {
   const out = [];
   if (!p.dbs_certificate_number && !p.dbs_update_service_number) out.push({ key: 'dbs', text: 'No DBS reference' });
@@ -172,10 +175,14 @@ export function criticalIssues(p = {}, docs = 0, todayIso = new Date().toISOStri
   const threeYears = d => { const x = new Date(d + 'T12:00:00Z'); x.setUTCFullYear(x.getUTCFullYear() + 3); return x.toISOString().slice(0, 10); };
   if (p.dbs_status === 'NEW_INFO') out.push({ key: 'dbsstatus', text: 'DBS status check: new information, ask for a new DBS' });
   else if (p.dbs_status === 'NO_MATCH') out.push({ key: 'dbsstatus', text: 'DBS status check: no match on the Update Service' });
-  if (p.dbs_update_service_number && p.dbs_update_renewal_date && p.dbs_update_renewal_date < todayIso) {
+  // A "Current: no new information" Update Service check overrides the expiry dates
+  const current = dbsCurrent(p);
+  const checkedOn = String(p.dbs_status_checked_at || '').slice(0, 10);
+  if (p.dbs_update_service_number && p.dbs_update_renewal_date && p.dbs_update_renewal_date < todayIso && !(current && checkedOn >= p.dbs_update_renewal_date)) {
     out.push({ key: 'expired', text: `DBS Update Service subscription lapsed ${p.dbs_update_renewal_date}` });
   }
-  if (p.dbs_expiry_date && p.dbs_expiry_date < todayIso) out.push({ key: 'expired', text: `DBS expired ${p.dbs_expiry_date}` });
+  if (current) { /* expiry date ignored: the DBS has confirmed the certificate is current */ }
+  else if (p.dbs_expiry_date && p.dbs_expiry_date < todayIso) out.push({ key: 'expired', text: `DBS expired ${p.dbs_expiry_date}` });
   else if (!p.dbs_expiry_date && !p.dbs_update_service_number && p.dbs_issue_date && threeYears(p.dbs_issue_date) < todayIso) {
     out.push({ key: 'expired', text: `DBS over 3 years old (issued ${p.dbs_issue_date}), not on Update Service` });
   }

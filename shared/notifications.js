@@ -5,6 +5,7 @@
 // Each item: { key, level: 'bad' | 'warn' | 'info', text, go: 'details' | 'forms' | null }
 
 import { suitabilityStatus } from './suitability.js';
+import { dbsCurrent } from './staffdetails.js';
 import { esc } from './ui.js';
 
 const addDays = (iso, n) => { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
@@ -31,8 +32,11 @@ export function staffNotifications(p, { lastDeclarationAt = null, today = new Da
   if (!p.date_of_birth) add('dob', 'warn', 'Add your date of birth: the office needs it to check your DBS.');
 
   // DBS expired / lapsed
-  const lapsed = p.dbs_update_service_number && p.dbs_update_renewal_date && p.dbs_update_renewal_date < today;
-  if (lapsed) {
+  // A "Current: no new information" Update Service check overrides the expiry dates
+  const current = dbsCurrent(p);
+  const lapsed = p.dbs_update_service_number && p.dbs_update_renewal_date && p.dbs_update_renewal_date < today
+    && !(current && String(p.dbs_status_checked_at || '').slice(0, 10) >= p.dbs_update_renewal_date);
+  if (current && !lapsed) { /* expiry dates ignored */ } else if (lapsed) {
     add('update_lapsed', 'bad', `Your DBS Update Service subscription ran out on ${nice(p.dbs_update_renewal_date)}. Please renew it at gov.uk/dbs-update-service, then update the renewal date.`);
   } else if (p.dbs_expiry_date && p.dbs_expiry_date < today) {
     add('dbs_expired', 'bad', `Your DBS expired on ${nice(p.dbs_expiry_date)}. Please speak to the office about a new DBS check.`, null);
@@ -44,6 +48,8 @@ export function staffNotifications(p, { lastDeclarationAt = null, today = new Da
     if (!p.dbs_update_renewal_date) {
       add('renewal_date', p.dbs_renewal_requested_at ? 'warn' : 'info',
         `${p.dbs_renewal_requested_at ? 'The office has asked for' : 'Add'} your DBS Update Service renewal date (it’s in your Update Service account at gov.uk/dbs-update-service).`);
+    } else if (p.dbs_update_renewal_date < today) {
+      add('renewal_date', 'info', 'Please update your DBS Update Service renewal date: the one we have has passed (it’s in your Update Service account at gov.uk/dbs-update-service).');
     } else if (p.dbs_update_renewal_date <= addDays(today, 30)) {
       add('renewal_soon', 'warn', `Your DBS Update Service subscription renews on ${nice(p.dbs_update_renewal_date)}. Please make sure it renews, then update the date.`);
     }
