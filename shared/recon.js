@@ -102,7 +102,7 @@ export function bankKind(t) {
   const d = t.description || '';
   if (/poncho/i.test(d)) return 'ponchopay';
   if (/national savings/i.test(d) && !/reversal/i.test(d)) return 'tfc';
-  if (/mryj/i.test(d)) return 'other';                       // another company's transfer, not a parent's voucher
+  if (/mryj/i.test(d)) return 'forwarded';                   // Hounslow TFC / vouchers passed on in bulk by MRYJ Ltd
   if (VOUCHER_PROVIDERS.some(([, , re]) => re.test(d))) return 'voucher';
   return 'other';
 }
@@ -257,6 +257,11 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
         : refs.length ? tfcPool(refs)
           : p.completed_at ? exactTfc(net, addDays(p.created_at, -7)) : [];   // no child reference: one credit of exactly that amount
       const t = take(pool, net, addDays(p.created_at, -7));
+      // Hounslow Tax-Free Childcare / vouchers that went to the previous owner arrive in bulk from MRYJ Ltd
+      if (t.covered < net - 0.01 && p.site === 'hounslow') {
+        const f = take(credits.filter(c => c.kind === 'forwarded'), pounds(net - t.covered), addDays(p.created_at, -7));
+        t.covered = pounds(t.covered + f.covered); t.used.push(...f.used);
+      }
       r.covered = t.covered; r.credits = t.used;
       for (const u of t.used) u.credit.used = u.credit.used || { type: s.scheme, ref: p.reference };
       r.state = t.covered >= net - 0.01 ? 'received' : t.covered > 0 ? 'part' : 'awaiting';
@@ -312,7 +317,7 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
   }
 
   // PonchoPay / Tax-Free Childcare / voucher credits not tied to an order, and other money in
-  const unmatchedBank = credits.filter(c => c.left > 0.004 && c.date >= from && c.kind !== 'other');
+  const unmatchedBank = credits.filter(c => c.left > 0.004 && c.date >= from && c.kind !== 'other');   // incl. MRYJ money not yet tied to a booking
   const otherCredits = credits.filter(c => c.left > 0.004 && c.date >= from && c.kind === 'other');
   const unmatchedPayments = [...payByOrder.values()].flat().filter(p => toDay(p.created_at) >= from);
   const sum = (list, f) => pounds(list.reduce((a, x) => a + f(x), 0));

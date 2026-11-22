@@ -131,3 +131,15 @@ test('reconcile: TFC split over several credits, and one credit shared by two bo
   assert.deepEqual(r.rows.map(x => [x.order.order_id, x.status, x.received]), [[201, 'paid', 24], [202, 'paid', 40], [1942, 'paid', 292]]);
   assert.equal(r.unmatchedBank.length, 0);
 });
+
+test('reconcile: Hounslow TFC paid via a bulk MRYJ transfer', () => {
+  const bank = parseHsbcCsv(`Date,Type,Description,Paid Out,Paid In,Balance
+12 Aug 2026,CR,"MRYJ LTD T/A Fun F CHILDCARE VOUCHERS",,100.00,`, 's');
+  assert.equal(bankKind(bank[0]), 'forwarded');
+  const tfc = (id, site, amount) => compactPonchoPayment({ uuid: 'm' + id, reference: 'PP-m' + id, amount: amount * 100, createdDate: '2026-08-01T10:00:00Z', completedDate: '2026-08-01T10:00:00Z',
+    integration: { metadata: String(id), location: `https://fun-fest.co.uk/${site}` },
+    subsidies: [{ scheme: 'tax-free-childcare', amount: amount * 100, refunds: [], payments: [], childReferenceCode: 'QQQQ11111TFC' }] });
+  const ord = (id, site, total) => ({ site, order_id: id, number: String(id), status: 'processing', created_at: '2026-08-01T09:00:00Z', total, refunded: 0 });
+  const r = reconcile({ orders: [ord(301, 'hounslow', 60), ord(302, 'northrichmond', 30), ord(303, 'hounslow', 60)], payments: [tfc(301, 'hounslow', 60), tfc(302, 'northrichmond', 30), tfc(303, 'hounslow', 60)], bank }, { today: '2026-09-30' });
+  assert.deepEqual(r.rows.map(x => [x.order.order_id, x.status, x.received]), [[301, 'paid', 60], [302, 'missing', 0], [303, 'part', 40]]);
+});
