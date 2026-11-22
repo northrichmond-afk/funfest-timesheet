@@ -8,6 +8,7 @@ import { criticalIssues } from '../shared/staffdetails.js';
 import { attendancePane } from './today.js';
 import { tabForms } from './forms.js';
 import { staffFilesCard, openStaffDetails } from './stafffiles.js';
+import { dbsStatusHTML, dbsCheckForm } from './dbscheck.js';
 import { importCard } from './staffimport.js';
 
 const view = document.getElementById('view');
@@ -580,7 +581,7 @@ async function reportStaffList() {
     ...rows.map(r => [r.name, r.email, r.personal, r.phone, r.address, r.dob, r.dbs, r.issued, r.update, r.renewal, r.checked, r.s.status]),
   ]));
   $('slPrint').onclick = () => window.print();
-  view.querySelectorAll('[data-sl]').forEach(b => b.onclick = () => openStaffDetails(dlg, rows[+b.dataset.sl].s, { siteName }));
+  view.querySelectorAll('[data-sl]').forEach(b => b.onclick = () => openStaffDetails(dlg, rows[+b.dataset.sl].s, { siteName, me: state.me }));
 }
 
 // Staff with no DBS Update Service ID
@@ -638,7 +639,7 @@ async function reportMissingDbs() {
     ...rows.map(r => [r.s.name, r.s.status, r.s.email, r.personal, r.phone, r.cert, r.docs ? 'Yes' : 'No']),
   ]));
   $('ndPrint').onclick = () => window.print();
-  view.querySelectorAll('[data-nd]').forEach(b => b.onclick = () => openStaffDetails(dlg, rows[+b.dataset.nd].s, { siteName }));
+  view.querySelectorAll('[data-nd]').forEach(b => b.onclick = () => openStaffDetails(dlg, rows[+b.dataset.nd].s, { siteName, me: state.me }));
 }
 
 // Critical information: DBS reference, DBS expiry, three references for staff starting from Sep 2026
@@ -646,7 +647,7 @@ const criticalFilter = { status: 'active', only: '' };
 async function reportCritical() {
   await loadRef();
   const [{ data: profiles, error }, { data: refDocs }] = await Promise.all([
-    sb.from('staff_profiles').select('staff_id, phone, start_date, dbs_certificate_number, dbs_issue_date, dbs_update_service_number, dbs_update_renewal_date, dbs_expiry_date, ref1_received, ref2_received, ref3_received'),
+    sb.from('staff_profiles').select('staff_id, full_name, phone, start_date, date_of_birth, dbs_certificate_number, dbs_issue_date, dbs_update_service_number, dbs_update_renewal_date, dbs_expiry_date, dbs_status, dbs_status_checked_at, dbs_status_detail, ref1_received, ref2_received, ref3_received'),
     sb.from('staff_documents').select('staff_id, kind').eq('kind', 'Reference'),
   ]);
   const prof = Object.fromEntries((profiles || []).map(p => [p.staff_id, p]));
@@ -660,13 +661,14 @@ async function reportCritical() {
   const rows = all.filter(r => r.issues.length && (!f.only || r.issues.some(i => i.key === f.only)));
   const noStart = all.filter(r => !r.p.start_date).length;
   const fmtD = d => (d ? new Date(d + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '');
-  const pillCls = { dbs: 'bad', expired: 'bad', refs: 'warn' };
+  const pillCls = { dbs: 'bad', expired: 'bad', refs: 'warn', dbsstatus: 'bad' };
+  const checkable = all.filter(r => r.p.dbs_update_service_number);
   view.innerHTML = `${reportTabsHTML()}
     <div class="card">
       <h2>Staff missing critical information</h2>
       ${error ? `<div class="msg warn small">${esc(error.message)}</div>` : ''}
       <div class="stats">
-        ${[['', 'Need attention', all.filter(r => r.issues.length).length], ['dbs', 'No DBS reference', count('dbs')], ['expired', 'DBS expired', count('expired')], ['refs', 'Under 3 references (start from Sep 2026)', count('refs')]]
+        ${[['', 'Need attention', all.filter(r => r.issues.length).length], ['dbs', 'No DBS reference', count('dbs')], ['expired', 'DBS expired', count('expired')], ['refs', 'Under 3 references (start from Sep 2026)', count('refs')], ['dbsstatus', 'DBS status check problem', count('dbsstatus')]]
           .map(([k, l, n]) => `<button class="stat ${f.only === k ? 'active' : ''}" data-only="${k}" style="text-align:left;cursor:pointer"><div class="v">${n || 0}</div><div class="k">${l}</div></button>`).join('')}
       </div>
       <div class="toolbar">
@@ -674,19 +676,21 @@ async function reportCritical() {
           .map(([v, l]) => `<option value="${v}" ${f.status === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         <button id="crCsv">⬇️ CSV</button>
         <button id="crPrint">🖨 Print</button>
+        <button id="crCheck" class="primary">🔎 Check DBS status (${checkable.length} on Update Service)</button>
       </div>
+      <div id="crCheckBox"></div>
       ${rows.length ? `<div class="table-wrap"><table>
         <tr><th>Name</th><th>Status</th><th>Start date</th><th>DBS</th><th>Missing / problem</th><th></th></tr>
         ${rows.map((r, i) => `<tr>
           <td>${esc(r.s.name)}</td>
           <td>${r.s.status === 'active' ? '<span class="pill ok">Active</span>' : r.s.status === 'invited' ? '<span class="pill warn">Invited</span>' : '<span class="pill bad">Inactive</span>'}</td>
           <td class="small">${fmtD(r.p.start_date) || '<span class="muted">not recorded</span>'}</td>
-          <td class="small">${esc(r.p.dbs_certificate_number || '')}${r.p.dbs_update_service_number ? `<div class="muted">${esc(r.p.dbs_update_service_number)}</div>` : ''}${r.p.dbs_expiry_date ? `<div class="muted">expiry ${fmtD(r.p.dbs_expiry_date)}</div>` : ''}</td>
+          <td class="small">${esc(r.p.dbs_certificate_number || '')}${r.p.dbs_update_service_number ? `<div class="muted">${esc(r.p.dbs_update_service_number)}</div>` : ''}${r.p.dbs_expiry_date ? `<div class="muted">expiry ${fmtD(r.p.dbs_expiry_date)}</div>` : ''}${r.p.dbs_status ? `<div>${dbsStatusHTML(r.p)}</div>` : ''}</td>
           <td>${r.issues.map(x => `<span class="pill ${pillCls[x.key]}" style="margin:0 .2rem .2rem 0">${esc(x.text)}</span>`).join('')}</td>
           <td><button class="small" data-cr="${i}">Details</button></td></tr>`).join('')}
       </table></div>` : '<p>✅ Nobody is missing critical information.</p>'}
       <p class="small muted">Rules: <b>DBS reference</b> = certificate number or Update Service ID. <b>DBS expired</b> = the DBS expiry / renewal date has passed, or with no expiry date, a certificate over 3 years old with no Update Service ID.
-        <b>3 references</b> applies to staff with a start date on or after 1 September 2026 and counts the “Reference received” dates in the office record.
+        <b>DBS status check</b> = the last Update Service check found new information or no match. <b>3 references</b> applies to staff with a start date on or after 1 September 2026 and counts the “Reference received” dates in the office record.
         ${noStart ? `${noStart} ${noStart === 1 ? 'person has' : 'people have'} no start date, so the references rule can’t be checked for them.` : ''}
         Fix anything under <b>Details › Office record › Edit</b>.</p>
     </div>`;
@@ -695,11 +699,12 @@ async function reportCritical() {
   $('crStatus').onchange = () => { f.status = $('crStatus').value; reportCritical(); };
   view.querySelectorAll('[data-only]').forEach(b => b.onclick = () => { f.only = b.dataset.only; reportCritical(); });
   $('crCsv').onclick = () => download(`funfest-critical-info-${today()}.csv`, toCSV([
-    ['Name', 'Status', 'Login email', 'Start date', 'DBS certificate', 'Update Service ID', 'DBS expiry', 'Problems'],
-    ...rows.map(r => [r.s.name, r.s.status, r.s.email, r.p.start_date || '', r.p.dbs_certificate_number || '', r.p.dbs_update_service_number || '', r.p.dbs_expiry_date || '', r.issues.map(x => x.text).join('; ')]),
+    ['Name', 'Status', 'Login email', 'Start date', 'DBS certificate', 'Update Service ID', 'DBS expiry', 'DBS status check', 'Checked', 'Problems'],
+    ...rows.map(r => [r.s.name, r.s.status, r.s.email, r.p.start_date || '', r.p.dbs_certificate_number || '', r.p.dbs_update_service_number || '', r.p.dbs_expiry_date || '', r.p.dbs_status || '', (r.p.dbs_status_checked_at || '').slice(0, 10), r.issues.map(x => x.text).join('; ')]),
   ]));
   $('crPrint').onclick = () => window.print();
-  view.querySelectorAll('[data-cr]').forEach(b => b.onclick = () => openStaffDetails(dlg, rows[+b.dataset.cr].s, { siteName }));
+  $('crCheck').onclick = () => { $('crCheckBox').innerHTML = ''; dbsCheckForm($('crCheckBox'), checkable, state.me, reportCritical); };
+  view.querySelectorAll('[data-cr]').forEach(b => b.onclick = () => openStaffDetails(dlg, rows[+b.dataset.cr].s, { siteName, me: state.me }));
 }
 
 async function reportTimesheets() {
@@ -907,7 +912,7 @@ function renderStaffList() {
   box.querySelectorAll('[data-sg]').forEach(b => b.onclick = () => { staffGroup = b.dataset.sg; renderStaffList(); });
   box.querySelectorAll('[data-inv]').forEach(b => b.onclick = () => invite(state.staff.find(s => s.id === b.dataset.inv)));
   box.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => editStaff(state.staff.find(s => s.id === b.dataset.ed)));
-  box.querySelectorAll('[data-det]').forEach(b => b.onclick = () => openStaffDetails(dlg, state.staff.find(s => s.id === b.dataset.det), { siteName }));
+  box.querySelectorAll('[data-det]').forEach(b => b.onclick = () => openStaffDetails(dlg, state.staff.find(s => s.id === b.dataset.det), { siteName, me: state.me }));
 }
 
 function inviteText(s) {

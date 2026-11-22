@@ -169,6 +169,8 @@ export function criticalIssues(p = {}, docs = 0, todayIso = new Date().toISOStri
   const out = [];
   if (!p.dbs_certificate_number && !p.dbs_update_service_number) out.push({ key: 'dbs', text: 'No DBS reference' });
   const threeYears = d => { const x = new Date(d + 'T12:00:00Z'); x.setUTCFullYear(x.getUTCFullYear() + 3); return x.toISOString().slice(0, 10); };
+  if (p.dbs_status === 'NEW_INFO') out.push({ key: 'dbsstatus', text: 'DBS status check: new information, ask for a new DBS' });
+  else if (p.dbs_status === 'NO_MATCH') out.push({ key: 'dbsstatus', text: 'DBS status check: no match on the Update Service' });
   if (p.dbs_update_service_number && p.dbs_update_renewal_date && p.dbs_update_renewal_date < todayIso) {
     out.push({ key: 'expired', text: `DBS Update Service subscription lapsed ${p.dbs_update_renewal_date}` });
   }
@@ -183,6 +185,21 @@ export function criticalIssues(p = {}, docs = 0, todayIso = new Date().toISOStri
   return out;
 }
 
+
+// DBS Update Service status check results (stored in staff_profiles.dbs_status)
+export const DBS_STATUS = {
+  BLANK_NO_NEW_INFO: { label: 'Current: no new information', cls: 'ok' },
+  NON_BLANK_NO_NEW_INFO: { label: 'Current: no new information since issue', cls: 'ok' },
+  NEW_INFO: { label: 'New information: don’t rely on this certificate, ask for a new DBS', cls: 'bad' },
+  NO_MATCH: { label: 'No match on the Update Service', cls: 'bad' },
+  ERROR: { label: 'Check failed: try again', cls: 'warn' },
+};
+/** Why a status check can't be run for this person (null when it can). */
+export function dbsCheckBlocker(p = {}) {
+  if (!/^\d{12}$/.test(String(p.dbs_certificate_number || '').replace(/\s/g, ''))) return 'No 12-digit DBS certificate number';
+  if (!p.date_of_birth) return 'No date of birth';
+  return null;
+}
 
 /** Office asked for the Update Service renewal date and it's still missing or out of date. */
 export const renewalRequestOpen = (p = {}, todayIso = new Date().toISOString().slice(0, 10)) =>

@@ -74,3 +74,14 @@ test('DBS Update Service renewal: request status and lapsed subscription', async
   assert.match(lapsed.map(x => x.text).join(), /lapsed 2026-10-01/);
   assert.match(renewalRequestEmail('Kaliya Hersi', 'https://x/app/').text, /^Hi Kaliya,[\s\S]*https:\/\/x\/app\//);
 });
+
+test('DBS status check: blockers and critical issues', async () => {
+  const { dbsCheckBlocker, criticalIssues } = await import('../shared/staffdetails.js');
+  assert.match(dbsCheckBlocker({}), /certificate/);
+  assert.match(dbsCheckBlocker({ dbs_certificate_number: '001234567890' }), /date of birth/);
+  assert.equal(dbsCheckBlocker({ dbs_certificate_number: '0012 3456 7890', date_of_birth: '1990-01-01' }), null);
+  const base = { dbs_certificate_number: '001234567890', dbs_update_service_number: 'C1' };
+  assert.deepEqual(criticalIssues({ ...base, dbs_status: 'BLANK_NO_NEW_INFO' }, 0, '2026-11-22'), []);
+  assert.equal(criticalIssues({ ...base, dbs_status: 'NEW_INFO' }, 0, '2026-11-22')[0].key, 'dbsstatus');
+  assert.equal(criticalIssues({ ...base, dbs_status: 'NO_MATCH' }, 0, '2026-11-22')[0].key, 'dbsstatus');
+});
