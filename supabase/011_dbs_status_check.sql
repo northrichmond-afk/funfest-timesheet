@@ -93,7 +93,7 @@ begin
     when v_type is not null then 'NO_MATCH'
     else 'ERROR' end;
   if out_status = 'NO_MATCH' then
-    detail := 'No match (' || v_type || '): not on the Update Service, subscription lapsed, or the certificate number, date of birth or surname ('
+    detail := 'No match (' || coalesce(v_status, v_type) || '): not on the Update Service, subscription lapsed, or the certificate number, date of birth or surname ('
               || sur || ') don''t match the certificate';
   end if;
 
