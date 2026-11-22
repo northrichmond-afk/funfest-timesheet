@@ -113,6 +113,7 @@ let tab = 'today';
 async function render() {
   clearInterval(timer);
   view.innerHTML = `
+    ${me?.role === 'admin' ? '<a class="btn" href="../admin/" style="display:block;text-align:center;margin-bottom:.8rem">🛠 Open the admin pages</a>' : ''}
     <div class="tabs">
       <button data-t="today" class="${tab === 'today' ? 'active' : ''}">Today</button>
       <button data-t="hours" class="${tab === 'hours' ? 'active' : ''}">My hours</button>
