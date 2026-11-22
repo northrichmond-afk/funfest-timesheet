@@ -65,7 +65,7 @@ function b64(bytes) {
 const b64url = s => s.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
 // Builds the raw MIME message (exported for tests)
-export function buildMime({ from, fromName, to, subject, text, pdfBytes, filename }) {
+export function buildMime({ from, fromName, to, subject, text, html, pdfBytes, filename }) {
   const boundary = 'ff_' + Math.random().toString(36).slice(2);
   const fromHdr = fromName ? `${encHeader(fromName)} <${from}>` : from;
   return [
@@ -73,8 +73,23 @@ export function buildMime({ from, fromName, to, subject, text, pdfBytes, filenam
     `To: ${to}`,
     `Subject: ${encHeader(subject)}`,
     'MIME-Version: 1.0',
-    ...(pdfBytes ? [] : ['Content-Type: text/plain; charset="UTF-8"', 'Content-Transfer-Encoding: base64', '', wrap76(b64(new TextEncoder().encode(text)))]),
-  ].concat(pdfBytes ? [
+    ...(pdfBytes || html ? [] : ['Content-Type: text/plain; charset="UTF-8"', 'Content-Transfer-Encoding: base64', '', wrap76(b64(new TextEncoder().encode(text)))]),
+  ].concat(html && !pdfBytes ? [
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    '',
+    `--${boundary}`,
+    'Content-Type: text/plain; charset="UTF-8"',
+    'Content-Transfer-Encoding: base64',
+    '',
+    wrap76(b64(new TextEncoder().encode(text))),
+    `--${boundary}`,
+    'Content-Type: text/html; charset="UTF-8"',
+    'Content-Transfer-Encoding: base64',
+    '',
+    wrap76(b64(new TextEncoder().encode(html))),
+    `--${boundary}--`,
+    '',
+  ] : pdfBytes ? [
     `Content-Type: multipart/mixed; boundary="${boundary}"`,
     '',
     `--${boundary}`,
