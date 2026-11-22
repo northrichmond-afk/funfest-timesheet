@@ -5,7 +5,7 @@
 
 import { sb } from '../shared/supabase.js';
 import { gmailToken, sendGmail, isEmail } from './gmail.js';
-import { dbsStatusHTML, dbsCheckForm } from './dbscheck.js';
+import { dbsStatusHTML, dbsCheckForm, dbsCheckDetailsHTML } from './dbscheck.js';
 import { esc, toast } from '../shared/ui.js';
 import { renewalRequestOpen, renewalRequestEmail, detailsViewHTML, detailsFormHTML, wireDetailsForm, readDetailsForm, checkDetails, SECTIONS, OFFICE_SECTIONS, OFFICE_FIELDS,
   displayValue, matchFolder, safeName, docFileName, detailsFileName, DOC_KINDS } from '../shared/staffdetails.js';
@@ -299,10 +299,12 @@ export async function openStaffDetails(dlg, s, ctx = {}) {
   dlg.addEventListener('close', () => { dlg.style.maxWidth = ''; }, { once: true });
   if (!dlg.open) dlg.showModal();
   const again = () => openStaffDetails(dlg, s, ctx);
-  const [{ data: p, error: e1 }, { data: docs, error: e2 }] = await Promise.all([
+  const [{ data: p, error: e1 }, { data: docs, error: e2 }, { data: checks }] = await Promise.all([
     sb.from('staff_profiles').select('*').eq('staff_id', s.id).maybeSingle(),
     sb.from('staff_documents').select('*').eq('staff_id', s.id).order('uploaded_at', { ascending: false }),
+    sb.from('dbs_status_checks').select('checked_at,status,forename,surname,print_date,certificate_number,checker_name').eq('staff_id', s.id).order('checked_at', { ascending: false }).limit(1),
   ]);
+  const lastCheck = checks?.[0];
   if (e1 || e2) { dlg.innerHTML = `<div class="msg bad">${esc((e1 || e2).message)}</div><form method="dialog"><button>Close</button></form>`; return; }
   const status = { active: '<span class="pill ok">Active</span>', invited: '<span class="pill warn">Invited</span>', left: '<span class="pill bad">Left</span>' }[s.status] || '';
   const docRows = (docs || []).map(d => `<tr>
@@ -329,7 +331,7 @@ export async function openStaffDetails(dlg, s, ctx = {}) {
         ${row('Start date', p?.start_date ? esc(displayValue('date', p.start_date)) : '')}
         ${row('DBS certificate', dbsLine)}
         ${row('DBS Update Service', p?.dbs_update_service ? '✅ ' + esc(p.dbs_update_service_number || '') : p?.dbs_update_service === false ? 'Not registered' : '')}
-        ${row('DBS status check', `${dbsStatusHTML(p || {})}<div style="margin-top:.3rem"><button type="button" id="dbsCheck" class="small">🔎 Check DBS status</button></div>`)}
+        ${row('DBS status check', `${dbsStatusHTML(p || {})}${dbsCheckDetailsHTML(lastCheck, p || {}, s.name)}<div style="margin-top:.3rem"><button type="button" id="dbsCheck" class="small">🔎 Check DBS status</button></div>`)}
         ${row('Update Service renewal date', `${p?.dbs_update_renewal_date ? esc(displayValue('date', p.dbs_update_renewal_date)) + (p.dbs_update_renewal_date < new Date().toISOString().slice(0, 10) ? ' <span class="pill bad">Lapsed</span>' : '') : '<span class="muted">not known</span>'}
           ${p?.dbs_renewal_requested_at ? `<div class="small muted">Requested ${fmtDay(p.dbs_renewal_requested_at)}${renewalRequestOpen(p) ? ' · waiting for reply' : ''}</div>` : ''}
           <div style="margin-top:.3rem"><button type="button" id="reqRenewal" class="small">📨 Request renewal date</button></div>`)}

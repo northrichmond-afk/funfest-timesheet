@@ -19,6 +19,25 @@ export function dbsStatusHTML(p = {}) {
     ${p.dbs_status_detail && p.dbs_status !== 'NO_MATCH' ? `<div class="small muted">${esc(p.dbs_status_detail)}</div>` : ''}`;
 }
 
+const norm = x => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z\s-]/g, '').trim();
+const fmtDate = d => new Date(d + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+
+/** Name and print date the DBS returned on the last check, with mismatch warnings. */
+export function dbsCheckDetailsHTML(check, p = {}, staffName = '') {
+  if (!check || (!check.forename && !check.surname && !check.print_date)) return '';
+  const ours = norm(p.full_name || staffName).split(/\s+/).filter(Boolean);
+  const theirs = norm(`${check.forename || ''} ${check.surname || ''}`).split(/\s+/).filter(Boolean);
+  const nameOk = !theirs.length || (ours[0] === theirs[0] && ours.at(-1) === theirs.at(-1));
+  const dateOk = !check.print_date || !p.dbs_issue_date || check.print_date === p.dbs_issue_date;
+  return `<div class="small" style="margin-top:.3rem">
+    ${theirs.length ? `<div>Name on certificate: <b>${esc([check.forename, check.surname].filter(Boolean).join(' '))}</b>
+      ${nameOk ? '' : ` <span class="pill warn">Doesn’t match ${esc(p.full_name || staffName)}</span>`}</div>` : ''}
+    ${check.print_date ? `<div>Certificate print date: <b>${fmtDate(check.print_date)}</b>
+      ${dateOk ? '' : ` <span class="pill warn">Details say issued ${fmtDate(p.dbs_issue_date)}</span>`}</div>` : ''}
+    ${check.certificate_number ? `<div class="muted">Certificate ${esc(check.certificate_number)} · checked by ${esc(check.checker_name || '')}</div>` : ''}
+  </div>`;
+}
+
 export async function runDbsCheck(staffId, cfg, surname) {
   const { data, error } = await sb.rpc('dbs_status_check', {
     p_staff: staffId, p_organisation: cfg.organisation, p_checker_forename: cfg.forename, p_checker_surname: cfg.surname,
