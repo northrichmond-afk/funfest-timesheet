@@ -41,11 +41,12 @@ test('form has personal details, qualifications/training and DBS only, and escap
 test('critical information rules', async () => {
   const { criticalIssues } = await import('../shared/staffdetails.js');
   const T = '2026-11-21';
-  const all = (p, d = 0) => criticalIssues(p, d, T).map(i => i.key);
-  const keys = (p, d = 0) => all(p, d).filter(k => k !== 'noupdate');
+  const all = (p, d = 0) => criticalIssues({ date_of_birth: '1990-01-01', ...p }, d, T).map(i => i.key);
+  assert.ok(criticalIssues({}, 0, T).some(i => i.key === 'dob'));
+  const keys = (p, d = 0) => all(p, d).filter(k => k !== 'noupdate' && k !== 'dob');
   assert.deepEqual(all({}), ['dbs', 'noupdate']);
   assert.deepEqual(all({ dbs_certificate_number: '001' }), ['noupdate']);
-  assert.equal(criticalIssues({ dbs_update_service: true }, 0, T)[1].text, 'Update Service ID not entered');
+  assert.equal(criticalIssues({ dbs_update_service: true }, 0, T).find(i => i.key === 'noupdate').text, 'Update Service ID not entered');
   assert.deepEqual(all({ dbs_update_service_number: 'C1' }), []);
   assert.deepEqual(keys({}), ['dbs']);
   assert.deepEqual(keys({ dbs_update_service_number: 'C1' }), []);
@@ -85,7 +86,7 @@ test('DBS status check: blockers and critical issues', async () => {
   assert.match(dbsCheckBlocker({}), /certificate/);
   assert.match(dbsCheckBlocker({ dbs_certificate_number: '001234567890' }), /date of birth/);
   assert.equal(dbsCheckBlocker({ dbs_certificate_number: '0012 3456 7890', date_of_birth: '1990-01-01' }), null);
-  const base = { dbs_certificate_number: '001234567890', dbs_update_service_number: 'C1' };
+  const base = { dbs_certificate_number: '001234567890', dbs_update_service_number: 'C1', date_of_birth: '1990-01-01' };
   assert.deepEqual(criticalIssues({ ...base, dbs_status: 'BLANK_NO_NEW_INFO' }, 0, '2026-11-22'), []);
   assert.equal(criticalIssues({ ...base, dbs_status: 'NEW_INFO' }, 0, '2026-11-22')[0].key, 'dbsstatus');
   assert.equal(criticalIssues({ ...base, dbs_status: 'NO_MATCH' }, 0, '2026-11-22')[0].key, 'dbsstatus');
