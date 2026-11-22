@@ -29,4 +29,10 @@ main { max-width: 520px; }
 .subtabs button { font-family: var(--font-nav); font-weight: 600; flex: 1; }
 .subtabs button.active { background: var(--pink); color: #fff; border-color: var(--pink); }
 
-.tabs .dot { color: var(--pink); font-size: .7em; vertical-align: super; }
+.tabs .dot { display: inline-block; min-width: 1.15em; padding: 0 .3em; border-radius: 999px; background: var(--pink); color: #fff; font-size: .7em; line-height: 1.5; vertical-align: super; }
+.notif { border-left: 5px solid var(--pink); }
+.notif.notif-info { border-left-color: var(--purple, #7d4c9e); }
+.notif h2 { margin-top: 0; font-size: 1.05rem; }
+.notif ul { margin: .3rem 0 0; padding-left: 1.1rem; display: grid; gap: .45rem; }
+.notif li.lvl-bad::marker { color: #be123c; }
+.notif li button { margin-top: .25rem; }
