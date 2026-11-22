@@ -5,6 +5,7 @@
 
 import { sb } from '../shared/supabase.js';
 import { gmailToken, sendGmail, isEmail } from './gmail.js';
+import { dbsStatusHTML, dbsCheckForm } from './dbscheck.js';
 import { esc, toast } from '../shared/ui.js';
 import { renewalRequestOpen, renewalRequestEmail, detailsViewHTML, detailsFormHTML, wireDetailsForm, readDetailsForm, checkDetails, SECTIONS, OFFICE_SECTIONS, OFFICE_FIELDS,
   displayValue, matchFolder, safeName, docFileName, detailsFileName, DOC_KINDS } from '../shared/staffdetails.js';
@@ -328,6 +329,7 @@ export async function openStaffDetails(dlg, s, ctx = {}) {
         ${row('Start date', p?.start_date ? esc(displayValue('date', p.start_date)) : '')}
         ${row('DBS certificate', dbsLine)}
         ${row('DBS Update Service', p?.dbs_update_service ? '✅ ' + esc(p.dbs_update_service_number || '') : p?.dbs_update_service === false ? 'Not registered' : '')}
+        ${row('DBS status check', `${dbsStatusHTML(p || {})}<div style="margin-top:.3rem"><button type="button" id="dbsCheck" class="small">🔎 Check DBS status</button></div>`)}
         ${row('Update Service renewal date', `${p?.dbs_update_renewal_date ? esc(displayValue('date', p.dbs_update_renewal_date)) + (p.dbs_update_renewal_date < new Date().toISOString().slice(0, 10) ? ' <span class="pill bad">Lapsed</span>' : '') : '<span class="muted">not known</span>'}
           ${p?.dbs_renewal_requested_at ? `<div class="small muted">Requested ${fmtDay(p.dbs_renewal_requested_at)}${renewalRequestOpen(p) ? ' · waiting for reply' : ''}</div>` : ''}
           <div style="margin-top:.3rem"><button type="button" id="reqRenewal" class="small">📨 Request renewal date</button></div>`)}
@@ -378,6 +380,11 @@ export async function openStaffDetails(dlg, s, ctx = {}) {
   showFolder(false);
 
   dlg.querySelector('#reqRenewal').onclick = () => requestRenewal(dlg, s, p, again);
+  dlg.querySelector('#dbsCheck').onclick = () => {
+    const wrap = document.createElement('div');
+    dlg.querySelector('#dbsCheck').closest('table').after(wrap);
+    dbsCheckForm(wrap, [{ s, p: p || {} }], ctx.me, again);
+  };
 
   dlg.querySelector('#pdf').onclick = async () => {
     const doc = await detailsPdf(p || { updated_at: new Date().toISOString() }, s.name);
