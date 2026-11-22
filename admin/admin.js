@@ -527,7 +527,7 @@ const staffListFilter = { status: 'current', q: '' };
 async function reportStaffList() {
   await loadRef();
   const { data: profiles, error } = await sb.from('staff_profiles')
-    .select('staff_id, full_name, personal_email, phone, address, dbs_certificate_number, dbs_issue_date, dbs_update_service, dbs_update_service_number, dbs_checked_on');
+    .select('staff_id, full_name, personal_email, phone, address, date_of_birth, dbs_certificate_number, dbs_issue_date, dbs_update_service, dbs_update_service_number, dbs_checked_on');
   const prof = Object.fromEntries((profiles || []).map(p => [p.staff_id, p]));
   const fmtD = d => (d ? new Date(d + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '');
   const f = staffListFilter;
@@ -537,7 +537,7 @@ async function reportStaffList() {
       const p = prof[s.id] || {};
       return {
         s, name: s.name, email: s.email, personal: p.personal_email && p.personal_email.toLowerCase() !== s.email.toLowerCase() ? p.personal_email : '',
-        phone: p.phone || s.phone || '', address: p.address || '',
+        phone: p.phone || s.phone || '', address: p.address || '', dob: p.date_of_birth || '',
         dbs: p.dbs_certificate_number || '', issued: p.dbs_issue_date || '',
         update: p.dbs_update_service ? (p.dbs_update_service_number || 'Yes') : p.dbs_update_service === false ? 'No' : '',
         checked: p.dbs_checked_on || '',
@@ -558,11 +558,12 @@ async function reportStaffList() {
       </div>
       <p class="small muted">${rows.length} ${rows.length === 1 ? 'person' : 'people'}${missing ? ` · <span class="pill warn">${missing} without a DBS number</span>` : ''}</p>
       <div class="table-wrap"><table>
-        <tr><th>Name</th><th>Email</th><th>Address</th><th>DBS certificate</th><th>Issued</th><th>Update Service ID</th><th>Checked</th><th></th></tr>
+        <tr><th>Name</th><th>Email</th><th>Address</th><th>Date of birth</th><th>DBS certificate</th><th>Issued</th><th>Update Service ID</th><th>Checked</th><th></th></tr>
         ${rows.map((r, i) => `<tr>
           <td>${esc(r.name)}${r.s.status === 'left' ? ' <span class="pill bad">Left</span>' : ''}</td>
           <td class="small">${esc(r.email)}${r.personal ? `<div class="muted">${esc(r.personal)}</div>` : ''}${r.phone ? `<div class="muted">${esc(r.phone)}</div>` : ''}</td>
           <td class="small" style="max-width:260px">${esc(r.address)}</td>
+          <td class="small" style="white-space:nowrap">${r.dob ? fmtD(r.dob) : '<span class="muted">—</span>'}</td>
           <td class="small">${r.dbs ? esc(r.dbs) : '<span class="pill warn">Missing</span>'}</td>
           <td class="small">${fmtD(r.issued)}</td>
           <td class="small">${esc(r.update)}</td>
@@ -575,8 +576,8 @@ async function reportStaffList() {
   $('slStatus').onchange = () => { f.status = $('slStatus').value; reportStaffList(); };
   let t; $('slQ').oninput = () => { clearTimeout(t); t = setTimeout(() => { f.q = $('slQ').value; reportStaffList().then(() => { const q = $('slQ'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }); }, 300); };
   $('slCsv').onclick = () => download(`funfest-staff-list-${today()}.csv`, toCSV([
-    ['Name', 'Login email', 'Personal email', 'Phone', 'Address', 'DBS certificate number', 'DBS issue date', 'DBS Update Service ID', 'DBS checked on', 'Status'],
-    ...rows.map(r => [r.name, r.email, r.personal, r.phone, r.address, r.dbs, r.issued, r.update, r.checked, r.s.status]),
+    ['Name', 'Login email', 'Personal email', 'Phone', 'Address', 'Date of birth', 'DBS certificate number', 'DBS issue date', 'DBS Update Service ID', 'DBS checked on', 'Status'],
+    ...rows.map(r => [r.name, r.email, r.personal, r.phone, r.address, r.dob, r.dbs, r.issued, r.update, r.checked, r.s.status]),
   ]));
   $('slPrint').onclick = () => window.print();
   view.querySelectorAll('[data-sl]').forEach(b => b.onclick = () => openStaffDetails(dlg, rows[+b.dataset.sl].s, { siteName }));
