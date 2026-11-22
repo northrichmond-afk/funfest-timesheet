@@ -87,7 +87,7 @@ export function mergeBank(...lists) {
 
 // Childcare voucher providers: PonchoPay provider name ↔ how they appear on the HSBC statement
 export const VOUCHER_PROVIDERS = [
-  ['edenred', /edenred/i, /edenred/i],
+  ['edenred', /edenred/i, /edenred|^\W*childcare vouchers\W*$/i],          // Edenred pays as plain "CHILDCARE VOUCHERS"
   ['computershare', /computershare/i, /comp ?voucher|computershare/i],
   ['pluxee', /pluxee|sodexo/i, /pluxee|sodexo/i],
   ['care4', /care ?4/i, /care ?4/i],
@@ -238,7 +238,8 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
   const pays = payments.map(x => ({ ...x, subs: [] }));
   const allSubs = pays.flatMap(p => (p.subsidies || []).map(s => ({ p, s }))).sort((a, b) => String(a.p.created_at).localeCompare(String(b.p.created_at)));
   const tfcPool = refs => credits.filter(c => c.kind === 'tfc' && refs.some(r => c.description.toUpperCase().includes(r)));
-  const voucherPool = key => credits.filter(c => c.kind === 'voucher' && bankVoucherKey(c.description) === key);
+  const voucherPool = key => credits.filter(c => c.kind === 'voucher' && [key, 'other'].includes(bankVoucherKey(c.description)));
+  const exactTfc = (amount, after) => credits.filter(c => c.kind === 'tfc' && c.left > 0.004 && same(c.left, amount) && c.date >= after).slice(0, 1);
   for (const { p, s } of allSubs) {
     const net = pounds(s.amount - (s.refunded || 0));
     const r = { ...s, net, state: 'awaiting', covered: 0, credits: [], payout: null };
@@ -251,7 +252,10 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
         else r.state = 'paidout';
       }
     } else if (toDay(p.created_at) >= addDays(from, -60)) {
-      const pool = s.scheme === 'tax-free-childcare' ? tfcPool(tfcRefs(s.childRef)) : voucherPool(voucherKey(s.provider));
+      const refs = tfcRefs(s.childRef);
+      const pool = s.scheme !== 'tax-free-childcare' ? voucherPool(voucherKey(s.provider))
+        : refs.length ? tfcPool(refs)
+          : p.completed_at ? exactTfc(net, addDays(p.created_at, -7)) : [];   // no child reference: one credit of exactly that amount
       const t = take(pool, net, addDays(p.created_at, -7));
       r.covered = t.covered; r.credits = t.used;
       for (const u of t.used) u.credit.used = u.credit.used || { type: s.scheme, ref: p.reference };
