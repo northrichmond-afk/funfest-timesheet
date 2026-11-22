@@ -129,3 +129,11 @@ test('email to parent: default wording and a valid MIME message with the PDF att
   assert.ok(!isEmail('a@b'));
   assert.ok(!isEmail('a@b.com, c@d.com'));
 });
+
+test('plain email without attachment', async () => {
+  const { buildMime } = await import('../admin/gmail.js');
+  const m = buildMime({ from: 'a@b.co', to: 'c@d.co', subject: 'Hi', text: 'Hello' });
+  assert.match(m, /Content-Type: text\/plain/);
+  assert.doesNotMatch(m, /multipart|application\/pdf/);
+  assert.equal(Buffer.from(m.split('\r\n\r\n')[1].replace(/\s/g, ''), 'base64').toString(), 'Hello');
+});

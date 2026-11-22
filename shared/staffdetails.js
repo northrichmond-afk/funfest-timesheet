@@ -23,6 +23,7 @@ export const SECTIONS = [
     ['dbs_issue_date', 'DBS certificate date of issue', 'date'],
     ['dbs_update_service', 'Are you registered with the DBS Update Service?', 'yesno'],
     ['dbs_update_service_number', 'DBS Update Service ID number', 'text', { placeholder: 'e.g. C0A1B2C3D4E5', showIf: 'dbs_update_service' }],
+    ['dbs_update_renewal_date', 'DBS Update Service renewal (expiry) date: shown when you sign in to your Update Service account', 'date', { showIf: 'dbs_update_service' }],
   ] },
 ];
 
@@ -168,6 +169,9 @@ export function criticalIssues(p = {}, docs = 0, todayIso = new Date().toISOStri
   const out = [];
   if (!p.dbs_certificate_number && !p.dbs_update_service_number) out.push({ key: 'dbs', text: 'No DBS reference' });
   const threeYears = d => { const x = new Date(d + 'T12:00:00Z'); x.setUTCFullYear(x.getUTCFullYear() + 3); return x.toISOString().slice(0, 10); };
+  if (p.dbs_update_service_number && p.dbs_update_renewal_date && p.dbs_update_renewal_date < todayIso) {
+    out.push({ key: 'expired', text: `DBS Update Service subscription lapsed ${p.dbs_update_renewal_date}` });
+  }
   if (p.dbs_expiry_date && p.dbs_expiry_date < todayIso) out.push({ key: 'expired', text: `DBS expired ${p.dbs_expiry_date}` });
   else if (!p.dbs_expiry_date && !p.dbs_update_service_number && p.dbs_issue_date && threeYears(p.dbs_issue_date) < todayIso) {
     out.push({ key: 'expired', text: `DBS over 3 years old (issued ${p.dbs_issue_date}), not on Update Service` });
@@ -179,6 +183,28 @@ export function criticalIssues(p = {}, docs = 0, todayIso = new Date().toISOStri
   return out;
 }
 
+
+/** Office asked for the Update Service renewal date and it's still missing or out of date. */
+export const renewalRequestOpen = (p = {}, todayIso = new Date().toISOString().slice(0, 10)) =>
+  !!p.dbs_renewal_requested_at && (!p.dbs_update_renewal_date || p.dbs_update_renewal_date < todayIso);
+
+export function renewalRequestEmail(name, appUrl) {
+  const first = String(name || '').split(' ')[0] || 'there';
+  return {
+    subject: 'Fun Fest: your DBS Update Service renewal date',
+    text: `Hi ${first},
+
+Please could you let us know when your DBS Update Service subscription is due for renewal (its expiry date)?
+
+You can find it by signing in to your Update Service account at https://www.gov.uk/dbs-update-service. Then add it in the Fun Fest Timesheet app under My details › DBS:
+${appUrl}
+
+If your subscription has lapsed, please renew it, or tell us so we can arrange a new DBS check.
+
+Thank you,
+Fun Fest`,
+  };
+}
 
 // ── iCloud file and folder names ─────────────────────────────
 

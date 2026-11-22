@@ -28,3 +28,5 @@ main { max-width: 520px; }
 .subtabs { display: flex; gap: .4rem; margin-bottom: 1rem; flex-wrap: wrap; }
 .subtabs button { font-family: var(--font-nav); font-weight: 600; flex: 1; }
 .subtabs button.active { background: var(--pink); color: #fff; border-color: var(--pink); }
+
+.tabs .dot { color: var(--pink); font-size: .7em; vertical-align: super; }

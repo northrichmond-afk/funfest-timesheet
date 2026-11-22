@@ -48,7 +48,7 @@ export async function gmailToken(sender) {
   const me = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { Authorization: `Bearer ${resp.access_token}` } }).then(r => r.json()).catch(() => ({}));
   const got = { token: resp.access_token, email: me.email || '', exp: Date.now() + (Number(resp.expires_in) || 3600) * 1000 };
   if (sender && got.email && got.email.toLowerCase() !== key) {
-    throw new Error(`You signed in to Google as ${got.email}, but this club's invoices are sent from ${sender}. Try again and choose ${sender}.`);
+    throw new Error(`You signed in to Google as ${got.email}, but this club's email is sent from ${sender}. Try again and choose ${sender}.`);
   }
   tokens[key] = got;
   return got;
@@ -73,6 +73,8 @@ export function buildMime({ from, fromName, to, subject, text, pdfBytes, filenam
     `To: ${to}`,
     `Subject: ${encHeader(subject)}`,
     'MIME-Version: 1.0',
+    ...(pdfBytes ? [] : ['Content-Type: text/plain; charset="UTF-8"', 'Content-Transfer-Encoding: base64', '', wrap76(b64(new TextEncoder().encode(text)))]),
+  ].concat(pdfBytes ? [
     `Content-Type: multipart/mixed; boundary="${boundary}"`,
     '',
     `--${boundary}`,
@@ -88,7 +90,7 @@ export function buildMime({ from, fromName, to, subject, text, pdfBytes, filenam
     wrap76(b64(pdfBytes)),
     `--${boundary}--`,
     '',
-  ].join('\r\n');
+  ] : ['']).join('\r\n');
 }
 
 export async function sendGmail({ token, ...msg }) {
