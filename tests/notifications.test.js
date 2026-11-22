@@ -34,3 +34,19 @@ test('reminder email lists the items', () => {
   assert.match(m.text, /^Hi Kaliya,/);
   assert.equal((m.text.match(/^- /gm) || []).length, 4);
 });
+
+test('a current Update Service check overrides expiry dates', async () => {
+  const { criticalIssues } = await import('../shared/staffdetails.js');
+  const p = { full_name: 'A', date_of_birth: '1990-01-01', dbs_certificate_number: '001', dbs_update_service_number: 'C1',
+    dbs_expiry_date: '2025-08-04', dbs_update_renewal_date: '2026-10-01' };
+  assert.deepEqual(criticalIssues(p, 0, T).map(i => i.key), ['expired', 'expired']);
+  const cur = { ...p, dbs_status: 'BLANK_NO_NEW_INFO', dbs_status_checked_at: '2026-11-22T11:00:00Z' };
+  assert.deepEqual(criticalIssues(cur, 0, T), []);
+  assert.deepEqual(keys(cur, { lastDeclarationAt: '2026-06-01' }), ['renewal_date']);   // stale renewal date: just ask for the new one
+  // checked before the renewal date passed: the lapsed subscription still counts
+  const old = { ...p, dbs_status: 'NON_BLANK_NO_NEW_INFO', dbs_status_checked_at: '2026-09-01T11:00:00Z' };
+  assert.deepEqual(criticalIssues(old, 0, T).map(i => i.key), ['expired']);
+  assert.deepEqual(keys(old, { lastDeclarationAt: '2026-06-01' }), ['update_lapsed']);
+  // no match / new info doesn't override
+  assert.ok(criticalIssues({ ...p, dbs_status: 'NO_MATCH' }, 0, T).some(i => i.key === 'expired'));
+});
