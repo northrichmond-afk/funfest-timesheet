@@ -523,7 +523,7 @@ function tabReports() {
     : reportTab === 'critical' ? reportCritical() : reportTimesheets();
 }
 
-const staffListFilter = { status: 'current', q: '' };
+const staffListFilter = { status: 'active', q: '' };
 async function reportStaffList() {
   await loadRef();
   const { data: profiles, error } = await sb.from('staff_profiles')
@@ -584,7 +584,7 @@ async function reportStaffList() {
 }
 
 // Staff with no DBS Update Service ID
-const noDbsFilter = { status: 'current' };
+const noDbsFilter = { status: 'active' };
 async function reportMissingDbs() {
   await loadRef();
   const [{ data: profiles, error }, { data: docs }] = await Promise.all([
@@ -642,7 +642,7 @@ async function reportMissingDbs() {
 }
 
 // Critical information: DBS reference, DBS expiry, three references for staff starting from Sep 2026
-const criticalFilter = { status: 'current', only: '' };
+const criticalFilter = { status: 'active', only: '' };
 async function reportCritical() {
   await loadRef();
   const [{ data: profiles, error }, { data: refDocs }] = await Promise.all([
