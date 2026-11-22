@@ -1,5 +1,5 @@
 // DBS Update Service status checks (admin). The database function dbs_status_check() calls the DBS
-// web service and records the result (migration 011). Used from the staff sheet and Reports › Critical info.
+// web service and records the result (migration 011). Used from the staff sheet and Reports › Missing info.
 
 import { sb } from '../shared/supabase.js';
 import { esc } from '../shared/ui.js';

@@ -511,7 +511,7 @@ const repFilter = { from: addDays(mondayOf(today()), -7), to: addDays(mondayOf(t
 
 // ── Reports (sub-tabs: Timesheets, Staff list) ───────────────
 
-const REPORTS = [['timesheets', 'Timesheets'], ['stafflist', 'Staff list'], ['nodbs', 'Missing DBS ID / DOB'], ['critical', 'Critical info']];
+const REPORTS = [['timesheets', 'Timesheets'], ['stafflist', 'Staff list'], ['critical', 'Missing info']];
 let reportTab = 'timesheets';
 function reportTabsHTML() {
   return `<div class="subtabs">${REPORTS.map(([k, l]) => `<button data-rt="${k}" class="${reportTab === k ? 'active' : ''}">${l}</button>`).join('')}</div>`;
@@ -521,8 +521,7 @@ function wireReportTabs() {
 }
 function tabReports() {
   view.innerHTML = '<p class="center muted">Loading…</p>';
-  return reportTab === 'stafflist' ? reportStaffList() : reportTab === 'nodbs' ? reportMissingDbs()
-    : reportTab === 'critical' ? reportCritical() : reportTimesheets();
+  return reportTab === 'stafflist' ? reportStaffList() : reportTab === 'critical' ? reportCritical() : reportTimesheets();
 }
 
 const staffListFilter = { status: 'active', q: '' };
@@ -585,81 +584,13 @@ async function reportStaffList() {
   view.querySelectorAll('[data-sl]').forEach(b => b.onclick = () => openStaffDetails(dlg, rows[+b.dataset.sl].s, { siteName, me: state.me }));
 }
 
-// Staff with no DBS Update Service ID
-const noDbsFilter = { status: 'active', only: '' };
-async function reportMissingDbs() {
-  await loadRef();
-  const [{ data: profiles, error }, { data: docs }] = await Promise.all([
-    sb.from('staff_profiles').select('staff_id, phone, personal_email, date_of_birth, dbs_certificate_number, dbs_update_service, dbs_update_service_number'),
-    sb.from('staff_documents').select('staff_id, kind, uploaded_at').ilike('kind', '%dbs%'),
-  ]);
-  const prof = Object.fromEntries((profiles || []).map(p => [p.staff_id, p]));
-  const dbsDocs = {};
-  for (const d of docs || []) (dbsDocs[d.staff_id] ??= []).push(d);
-  const f = noDbsFilter;
-  const fmtD = d => (d ? new Date(d + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '');
-  const people = state.staff
-    .filter(s => s.role !== 'admin' || f.status === 'all')
-    .filter(s => f.status === 'all' || (f.status === 'current' ? s.status !== 'left' : s.status === f.status))
-    .map(s => {
-      const p = prof[s.id] || {};
-      const d = dbsDocs[s.id] || [];
-      return { s, phone: p.phone || s.phone || '', personal: p.personal_email || '', cert: p.dbs_certificate_number || '',
-        update: p.dbs_update_service_number || '', dob: p.date_of_birth || '', updateNoId: !!p.dbs_update_service, docs: d.length };
-    });
-  const missing = people.filter(r => !r.update || !r.dob);
-  const nUpd = people.filter(r => !r.update).length, nDob = people.filter(r => !r.dob).length;
-  const rows = missing.filter(r => f.only === 'update' ? !r.update : f.only === 'dob' ? !r.dob : true);
-  const miss = '<span class="pill warn">Missing</span>';
-  view.innerHTML = `${reportTabsHTML()}
-    <div class="card">
-      <h2>Staff missing a DBS Update Service ID or date of birth</h2>
-      ${error ? `<div class="msg warn small">${esc(error.message)}</div>` : ''}
-      <div class="stats">
-        ${[['', 'Missing either', missing.length], ['update', 'No Update Service ID', nUpd], ['dob', 'No date of birth', nDob]]
-          .map(([k, l, n]) => `<button class="stat ${f.only === k ? 'active' : ''}" data-ndonly="${k}" style="text-align:left;cursor:pointer"><div class="v">${n}</div><div class="k">${l}</div></button>`).join('')}
-      </div>
-      <div class="toolbar">
-        <label>Show<select id="ndStatus">${[['current', 'Current (not left)'], ['active', 'Active'], ['invited', 'Invited'], ['all', 'Everyone (incl. admins and leavers)']]
-          .map(([v, l]) => `<option value="${v}" ${f.status === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-        <button id="ndCsv">⬇️ CSV</button>
-        <button id="ndPrint">🖨 Print</button>
-      </div>
-      <p class="small">${rows.length ? `<span class="pill warn">${rows.length}</span> of ${people.length} ${rows.length === 1 ? 'person needs' : 'people need'} details adding.`
-        : '✅ Nobody here is missing these details.'}</p>
-      ${rows.length ? `<div class="table-wrap"><table>
-        <tr><th>Name</th><th>Status</th><th>Email</th><th>Phone</th><th>DBS certificate</th><th>Update Service ID</th><th>Date of birth</th><th>Notes</th><th></th></tr>
-        ${rows.map((r, i) => `<tr>
-          <td>${esc(r.s.name)}</td>
-          <td>${r.s.status === 'active' ? '<span class="pill ok">Active</span>' : r.s.status === 'invited' ? '<span class="pill warn">Invited</span>' : '<span class="pill bad">Inactive</span>'}</td>
-          <td class="small">${esc(r.s.email)}${r.personal && r.personal.toLowerCase() !== r.s.email.toLowerCase() ? `<div class="muted">${esc(r.personal)}</div>` : ''}</td>
-          <td class="small">${esc(r.phone)}</td>
-          <td class="small">${r.cert ? esc(r.cert) : miss}</td>
-          <td class="small">${r.update ? esc(r.update) : miss}</td>
-          <td class="small" style="white-space:nowrap">${r.dob ? fmtD(r.dob) : miss}</td>
-          <td class="small">${!r.update && r.updateNoId ? 'Registered, ID not entered' : r.docs ? `DBS file uploaded (${r.docs})` : ''}</td>
-          <td><button class="small" data-nd="${i}">Details</button></td></tr>`).join('')}
-      </table></div>
-      <p class="small muted">Staff can add their Update Service ID and date of birth in the staff app under <b>My details</b>, or you can add them under <b>Details › Edit</b>. Both are needed for a DBS status check.</p>` : ''}
-    </div>`;
-  wireReportTabs();
-  const $ = id => document.getElementById(id);
-  $('ndStatus').onchange = () => { f.status = $('ndStatus').value; reportMissingDbs(); };
-  view.querySelectorAll('[data-ndonly]').forEach(b => b.onclick = () => { f.only = b.dataset.ndonly; reportMissingDbs(); });
-  $('ndCsv').onclick = () => download(`funfest-missing-dbs-details-${today()}.csv`, toCSV([
-    ['Name', 'Status', 'Login email', 'Personal email', 'Phone', 'DBS certificate number', 'DBS Update Service ID', 'Date of birth', 'DBS file uploaded'],
-    ...rows.map(r => [r.s.name, r.s.status, r.s.email, r.personal, r.phone, r.cert, r.update, r.dob, r.docs ? 'Yes' : 'No']),
-  ]));
-  $('ndPrint').onclick = () => window.print();
-  view.querySelectorAll('[data-nd]').forEach(b => b.onclick = () => openStaffDetails(dlg, rows[+b.dataset.nd].s, { siteName, me: state.me }));
-}
 
-// Critical information: DBS reference, DBS expiry, three references for staff starting from Sep 2026
+// Missing info: DBS reference, Update Service ID, date of birth, DBS expiry, status checks, three references (starts from Sep 2026)
 const criticalFilter = { status: 'active', only: '' };
 async function reportCritical() {
   await loadRef();
   const [{ data: profiles, error }, { data: refDocs }] = await Promise.all([
-    sb.from('staff_profiles').select('staff_id, full_name, phone, start_date, date_of_birth, dbs_certificate_number, dbs_issue_date, dbs_update_service_number, dbs_update_renewal_date, dbs_expiry_date, dbs_status, dbs_status_checked_at, dbs_status_detail, ref1_received, ref2_received, ref3_received'),
+    sb.from('staff_profiles').select('staff_id, full_name, phone, personal_email, start_date, date_of_birth, dbs_update_service, dbs_certificate_number, dbs_issue_date, dbs_update_service_number, dbs_update_renewal_date, dbs_expiry_date, dbs_status, dbs_status_checked_at, dbs_status_detail, ref1_received, ref2_received, ref3_received'),
     sb.from('staff_documents').select('staff_id, kind').eq('kind', 'Reference'),
   ]);
   const prof = Object.fromEntries((profiles || []).map(p => [p.staff_id, p]));
@@ -673,14 +604,15 @@ async function reportCritical() {
   const rows = all.filter(r => r.issues.length && (!f.only || r.issues.some(i => i.key === f.only)));
   const noStart = all.filter(r => !r.p.start_date).length;
   const fmtD = d => (d ? new Date(d + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '');
-  const pillCls = { dbs: 'bad', noupdate: 'bad', expired: 'bad', refs: 'warn', dbsstatus: 'bad' };
+  const pillCls = { dbs: 'bad', noupdate: 'bad', dob: 'warn', expired: 'bad', refs: 'warn', dbsstatus: 'bad' };
   const checkable = all.filter(r => r.p.dbs_update_service_number);
+  const miss = '<span class="pill warn">Missing</span>';
   view.innerHTML = `${reportTabsHTML()}
     <div class="card">
-      <h2>Staff missing critical information</h2>
+      <h2>Staff missing information</h2>
       ${error ? `<div class="msg warn small">${esc(error.message)}</div>` : ''}
       <div class="stats">
-        ${[['', 'Need attention', all.filter(r => r.issues.length).length], ['dbs', 'No DBS reference', count('dbs')], ['noupdate', 'No Update Service ID', count('noupdate')], ['expired', 'DBS expired', count('expired')], ['refs', 'Under 3 references (start from Sep 2026)', count('refs')], ['dbsstatus', 'DBS status check problem', count('dbsstatus')]]
+        ${[['', 'Need attention', all.filter(r => r.issues.length).length], ['dbs', 'No DBS reference', count('dbs')], ['noupdate', 'No Update Service ID', count('noupdate')], ['dob', 'No date of birth', count('dob')], ['expired', 'DBS expired', count('expired')], ['refs', 'Under 3 references (start from Sep 2026)', count('refs')], ['dbsstatus', 'DBS status check problem', count('dbsstatus')]]
           .map(([k, l, n]) => `<button class="stat ${f.only === k ? 'active' : ''}" data-only="${k}" style="text-align:left;cursor:pointer"><div class="v">${n || 0}</div><div class="k">${l}</div></button>`).join('')}
       </div>
       <div class="toolbar">
@@ -693,16 +625,19 @@ async function reportCritical() {
       </div>
       <div id="crCheckBox"></div>
       ${rows.length ? `<div class="table-wrap"><table>
-        <tr><th>Name</th><th>Status</th><th>Start date</th><th>DBS</th><th>Missing / problem</th><th></th></tr>
+        <tr><th>Name</th><th>Status</th><th>Contact</th><th>Start date</th><th>DBS certificate</th><th>Update Service ID</th><th>Date of birth</th><th>Missing / problem</th><th></th></tr>
         ${rows.map((r, i) => `<tr>
           <td>${esc(r.s.name)}</td>
           <td>${r.s.status === 'active' ? '<span class="pill ok">Active</span>' : r.s.status === 'invited' ? '<span class="pill warn">Invited</span>' : '<span class="pill bad">Inactive</span>'}</td>
+          <td class="small">${/\.invalid$/i.test(r.s.email) ? '<span class="pill warn">No email</span>' : esc(r.s.email)}${r.p.personal_email && r.p.personal_email.toLowerCase() !== r.s.email.toLowerCase() ? `<div class="muted">${esc(r.p.personal_email)}</div>` : ''}${r.p.phone || r.s.phone ? `<div class="muted">${esc(r.p.phone || r.s.phone)}</div>` : ''}</td>
           <td class="small">${fmtD(r.p.start_date) || '<span class="muted">not recorded</span>'}</td>
-          <td class="small">${esc(r.p.dbs_certificate_number || '')}${r.p.dbs_update_service_number ? `<div class="muted">${esc(r.p.dbs_update_service_number)}</div>` : ''}${r.p.dbs_expiry_date ? `<div class="muted">expiry ${fmtD(r.p.dbs_expiry_date)}</div>` : ''}${r.p.dbs_status ? `<div>${dbsStatusHTML(r.p)}</div>` : ''}</td>
+          <td class="small">${esc(r.p.dbs_certificate_number || '') || miss}${r.p.dbs_expiry_date ? `<div class="muted">expiry ${fmtD(r.p.dbs_expiry_date)}</div>` : ''}${r.p.dbs_status ? `<div>${dbsStatusHTML(r.p)}</div>` : ''}</td>
+          <td class="small">${r.p.dbs_update_service_number ? esc(r.p.dbs_update_service_number) : miss}${r.p.dbs_update_renewal_date ? `<div class="muted">renews ${fmtD(r.p.dbs_update_renewal_date)}</div>` : ''}</td>
+          <td class="small" style="white-space:nowrap">${r.p.date_of_birth ? fmtD(r.p.date_of_birth) : miss}</td>
           <td>${r.issues.map(x => `<span class="pill ${pillCls[x.key]}" style="margin:0 .2rem .2rem 0">${esc(x.text)}</span>`).join('')}</td>
           <td><button class="small" data-cr="${i}">Details</button></td></tr>`).join('')}
-      </table></div>` : '<p>✅ Nobody is missing critical information.</p>'}
-      <p class="small muted">Rules: <b>DBS reference</b> = certificate number or Update Service ID. <b>Update Service ID</b> = everyone needs one. <b>DBS expired</b> = the DBS expiry / renewal date has passed, or with no expiry date, a certificate over 3 years old with no Update Service ID (ignored when the last Update Service check said “Current: no new information”).
+      </table></div>` : '<p>✅ Nobody is missing information.</p>'}
+      <p class="small muted">Rules: <b>DBS reference</b> = certificate number or Update Service ID. <b>Update Service ID</b> and <b>date of birth</b> = everyone needs them (both are needed for a DBS status check). <b>DBS expired</b> = the DBS expiry / renewal date has passed, or with no expiry date, a certificate over 3 years old with no Update Service ID (ignored when the last Update Service check said “Current: no new information”).
         <b>DBS status check</b> = the last Update Service check found new information or no match. <b>3 references</b> applies to staff with a start date on or after 1 September 2026 and counts the “Reference received” dates in the office record.
         ${noStart ? `${noStart} ${noStart === 1 ? 'person has' : 'people have'} no start date, so the references rule can’t be checked for them.` : ''}
         Fix anything under <b>Details › Office record › Edit</b>.</p>
@@ -711,9 +646,9 @@ async function reportCritical() {
   const $ = id => document.getElementById(id);
   $('crStatus').onchange = () => { f.status = $('crStatus').value; reportCritical(); };
   view.querySelectorAll('[data-only]').forEach(b => b.onclick = () => { f.only = b.dataset.only; reportCritical(); });
-  $('crCsv').onclick = () => download(`funfest-critical-info-${today()}.csv`, toCSV([
-    ['Name', 'Status', 'Login email', 'Start date', 'DBS certificate', 'Update Service ID', 'DBS expiry', 'DBS status check', 'Checked', 'Problems'],
-    ...rows.map(r => [r.s.name, r.s.status, r.s.email, r.p.start_date || '', r.p.dbs_certificate_number || '', r.p.dbs_update_service_number || '', r.p.dbs_expiry_date || '', r.p.dbs_status || '', (r.p.dbs_status_checked_at || '').slice(0, 10), r.issues.map(x => x.text).join('; ')]),
+  $('crCsv').onclick = () => download(`funfest-missing-info-${today()}.csv`, toCSV([
+    ['Name', 'Status', 'Login email', 'Personal email', 'Phone', 'Start date', 'Date of birth', 'DBS certificate', 'Update Service ID', 'Update Service renewal', 'DBS expiry', 'DBS status check', 'Checked', 'Problems'],
+    ...rows.map(r => [r.s.name, r.s.status, r.s.email, r.p.personal_email || '', r.p.phone || r.s.phone || '', r.p.start_date || '', r.p.date_of_birth || '', r.p.dbs_certificate_number || '', r.p.dbs_update_service_number || '', r.p.dbs_update_renewal_date || '', r.p.dbs_expiry_date || '', r.p.dbs_status || '', (r.p.dbs_status_checked_at || '').slice(0, 10), r.issues.map(x => x.text).join('; ')]),
   ]));
   $('crPrint').onclick = () => window.print();
   $('crRemind').onclick = () => { $('crCheckBox').innerHTML = ''; remindersForm($('crCheckBox'), people.filter(s => s.role !== 'admin'), null); };
