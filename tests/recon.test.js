@@ -161,3 +161,19 @@ test('reconcile: Childcare Grant arrives as NATIONAL SAVINGS; referenced TFC get
   assert.equal(by[5950].status, 'paid');
   assert.equal(by[5950].subs[0].credits[0].credit.description, 'NATIONAL SAVINGS A TABU12345');
 });
+
+test('reconcile: reference letters from the child’s name (initial + first 3 of surname)', async () => {
+  const { refStems } = await import('../shared/recon.js');
+  assert.deepEqual(refStems('Amelia Hutsan, Vlad Tabuci'), ['AHUT', 'VTAB']);
+  const bank = parseHsbcCsv(`Date,Type,Description,Paid Out,Paid In,Balance
+29 Oct 2026,CR,"NATIONAL SAVINGS A VTAB11111",,10.00,
+30 Oct 2026,CR,"NATIONAL SAVINGS A VTAB11111",,14.00,
+30 Oct 2026,CR,"NATIONAL SAVINGS A XYZW22222",,24.00,`, 's');
+  const grant = compactPonchoPayment({ uuid: 'g', reference: 'PP-g', amount: 2400, createdDate: '2026-10-28T13:20:00Z', completedDate: '2026-10-28T13:21:00Z',
+    children: [{ name: 'Vlad Tabuci' }], integration: { metadata: '5950', location: 'https://fun-fest.co.uk/hounslow' },
+    subsidies: [{ scheme: 'childcare-voucher', amount: 2400, refunds: [], payments: [], voucherProvider: { name: 'Childcare Grant Payment Service' } }] });
+  const r = reconcile({ orders: [{ site: 'hounslow', order_id: 5950, number: '5950', status: 'completed', created_at: '2026-10-28T13:20:00Z', total: 24, refunded: 0 }], payments: [grant], bank }, { today: '2026-11-22' });
+  assert.equal(r.rows[0].status, 'paid');
+  assert.deepEqual(r.rows[0].subs[0].credits.map(c => c.credit.description), ['NATIONAL SAVINGS A VTAB11111', 'NATIONAL SAVINGS A VTAB11111']);
+  assert.equal(r.unmatchedBank.length, 1);   // the other family's £24 is left alone
+});
