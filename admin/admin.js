@@ -673,14 +673,14 @@ async function reportCritical() {
   const rows = all.filter(r => r.issues.length && (!f.only || r.issues.some(i => i.key === f.only)));
   const noStart = all.filter(r => !r.p.start_date).length;
   const fmtD = d => (d ? new Date(d + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '');
-  const pillCls = { dbs: 'bad', expired: 'bad', refs: 'warn', dbsstatus: 'bad' };
+  const pillCls = { dbs: 'bad', noupdate: 'bad', expired: 'bad', refs: 'warn', dbsstatus: 'bad' };
   const checkable = all.filter(r => r.p.dbs_update_service_number);
   view.innerHTML = `${reportTabsHTML()}
     <div class="card">
       <h2>Staff missing critical information</h2>
       ${error ? `<div class="msg warn small">${esc(error.message)}</div>` : ''}
       <div class="stats">
-        ${[['', 'Need attention', all.filter(r => r.issues.length).length], ['dbs', 'No DBS reference', count('dbs')], ['expired', 'DBS expired', count('expired')], ['refs', 'Under 3 references (start from Sep 2026)', count('refs')], ['dbsstatus', 'DBS status check problem', count('dbsstatus')]]
+        ${[['', 'Need attention', all.filter(r => r.issues.length).length], ['dbs', 'No DBS reference', count('dbs')], ['noupdate', 'No Update Service ID', count('noupdate')], ['expired', 'DBS expired', count('expired')], ['refs', 'Under 3 references (start from Sep 2026)', count('refs')], ['dbsstatus', 'DBS status check problem', count('dbsstatus')]]
           .map(([k, l, n]) => `<button class="stat ${f.only === k ? 'active' : ''}" data-only="${k}" style="text-align:left;cursor:pointer"><div class="v">${n || 0}</div><div class="k">${l}</div></button>`).join('')}
       </div>
       <div class="toolbar">
@@ -702,7 +702,7 @@ async function reportCritical() {
           <td>${r.issues.map(x => `<span class="pill ${pillCls[x.key]}" style="margin:0 .2rem .2rem 0">${esc(x.text)}</span>`).join('')}</td>
           <td><button class="small" data-cr="${i}">Details</button></td></tr>`).join('')}
       </table></div>` : '<p>✅ Nobody is missing critical information.</p>'}
-      <p class="small muted">Rules: <b>DBS reference</b> = certificate number or Update Service ID. <b>DBS expired</b> = the DBS expiry / renewal date has passed, or with no expiry date, a certificate over 3 years old with no Update Service ID.
+      <p class="small muted">Rules: <b>DBS reference</b> = certificate number or Update Service ID. <b>Update Service ID</b> = everyone needs one. <b>DBS expired</b> = the DBS expiry / renewal date has passed, or with no expiry date, a certificate over 3 years old with no Update Service ID.
         <b>DBS status check</b> = the last Update Service check found new information or no match. <b>3 references</b> applies to staff with a start date on or after 1 September 2026 and counts the “Reference received” dates in the office record.
         ${noStart ? `${noStart} ${noStart === 1 ? 'person has' : 'people have'} no start date, so the references rule can’t be checked for them.` : ''}
         Fix anything under <b>Details › Office record › Edit</b>.</p>

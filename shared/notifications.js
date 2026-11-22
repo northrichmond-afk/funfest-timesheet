@@ -24,6 +24,8 @@ export function staffNotifications(p, { lastDeclarationAt = null, today = new Da
     add('dbs', 'bad', 'Add your DBS certificate number, and your DBS Update Service ID if you have one.');
   } else if (p.dbs_update_service && !p.dbs_update_service_number) {
     add('dbs_update_id', 'bad', 'You said you’re on the DBS Update Service: please add your Update Service ID.');
+  } else if (!p.dbs_update_service_number) {
+    add('dbs_update_id', 'bad', 'Please join the DBS Update Service at gov.uk/dbs-update-service and add your Update Service ID. If your certificate is too old to add, speak to the office.');
   }
   // Date of birth (needed for DBS checks)
   if (!p.date_of_birth) add('dob', 'warn', 'Add your date of birth: the office needs it to check your DBS.');
