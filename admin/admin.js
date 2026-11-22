@@ -9,6 +9,7 @@ import { attendancePane } from './today.js';
 import { tabForms } from './forms.js';
 import { staffFilesCard, openStaffDetails } from './stafffiles.js';
 import { dbsStatusHTML, dbsCheckForm } from './dbscheck.js';
+import { remindersForm } from './reminders.js';
 import { importCard } from './staffimport.js';
 
 const view = document.getElementById('view');
@@ -687,6 +688,7 @@ async function reportCritical() {
           .map(([v, l]) => `<option value="${v}" ${f.status === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         <button id="crCsv">⬇️ CSV</button>
         <button id="crPrint">🖨 Print</button>
+        <button id="crRemind">📨 Send reminders to staff</button>
         <button id="crCheck" class="primary">🔎 Check DBS status (${checkable.length} on Update Service)</button>
       </div>
       <div id="crCheckBox"></div>
@@ -714,6 +716,7 @@ async function reportCritical() {
     ...rows.map(r => [r.s.name, r.s.status, r.s.email, r.p.start_date || '', r.p.dbs_certificate_number || '', r.p.dbs_update_service_number || '', r.p.dbs_expiry_date || '', r.p.dbs_status || '', (r.p.dbs_status_checked_at || '').slice(0, 10), r.issues.map(x => x.text).join('; ')]),
   ]));
   $('crPrint').onclick = () => window.print();
+  $('crRemind').onclick = () => { $('crCheckBox').innerHTML = ''; remindersForm($('crCheckBox'), people.filter(s => s.role !== 'admin'), null); };
   $('crCheck').onclick = () => { $('crCheckBox').innerHTML = ''; dbsCheckForm($('crCheckBox'), checkable, state.me, reportCritical); };
   view.querySelectorAll('[data-cr]').forEach(b => b.onclick = () => openStaffDetails(dlg, rows[+b.dataset.cr].s, { siteName, me: state.me }));
 }

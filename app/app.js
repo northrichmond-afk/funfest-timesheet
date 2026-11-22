@@ -5,7 +5,7 @@ import { calcEntry, fmtHours, localDate, localTime, decimalHours, distanceM } fr
 import { esc, toast, setRoleTitle } from '../shared/ui.js';
 import { renderDetails } from './details.js';
 import { renderForms } from './forms.js';
-import { renewalRequestOpen } from '../shared/staffdetails.js';
+import { staffNotifications, notificationsHTML } from '../shared/notifications.js';
 
 const view = document.getElementById('view');
 const dlg = document.getElementById('dlg');
@@ -122,15 +122,18 @@ async function render() {
     <div id="notice"></div>
     <div id="pane"><p class="center muted">Loading…</p></div>
     ${installHint()}`;
-  // Office asked for something on My details (e.g. the DBS Update Service renewal date)
-  sb.from('staff_profiles').select('dbs_renewal_requested_at,dbs_update_renewal_date').eq('staff_id', me.id).maybeSingle()
-    .then(({ data }) => {
-      if (!renewalRequestOpen(data || {})) return;
-      const b = view.querySelector('[data-t=details]');
-      if (b && !b.querySelector('.dot')) b.insertAdjacentHTML('beforeend', ' <span class="dot" title="The office has asked for something">●</span>');
-      if (tab === 'today') view.querySelector('#notice').innerHTML = ('<div class="card msg warn" id="reqNote">📨 The office has asked for your <b>DBS Update Service renewal date</b>. Please add it under <b>My details › DBS</b>. <button type="button" class="small" id="goDetails">Open My details</button></div>');
-      view.querySelector('#goDetails')?.addEventListener('click', () => { tab = 'details'; render(); });
-    }).catch(() => {});
+  // Notifications: critical information the staff member needs to add or act on
+  loadNotifications(me).then(items => {
+    if (!items.length) return;
+    for (const [t, n] of [['details', items.filter(i => i.go === 'details').length], ['forms', items.filter(i => i.go === 'forms').length]]) {
+      const b = view.querySelector(`[data-t=${t}]`);
+      if (n && b && !b.querySelector('.dot')) b.insertAdjacentHTML('beforeend', ` <span class="dot" title="${n} to do">${n}</span>`);
+    }
+    if (tab !== 'today') return;
+    const box = view.querySelector('#notice');
+    box.innerHTML = notificationsHTML(items);
+    box.querySelectorAll('[data-go]').forEach(x => x.onclick = () => { tab = x.dataset.go; render(); });
+  }).catch(() => {});
   view.querySelectorAll('.tabs button').forEach(b => b.onclick = () => { tab = b.dataset.t; render(); });
   if (tab === 'today') renderToday();
   else if (tab === 'details') renderDetails(document.getElementById('pane'), me);
@@ -416,4 +419,13 @@ function installHint() {
         ? `<ol><li>Open this page in <strong>Safari</strong>.</li><li>Tap the <strong>Share</strong> button (square with arrow).</li><li>Tap <strong>Add to Home Screen</strong>, then <strong>Add</strong>.</li></ol>`
         : `<ol><li>Open this page in <strong>Chrome</strong>.</li><li>Tap the <strong>⋮</strong> menu.</li><li>Tap <strong>Add to Home screen</strong> or <strong>Install app</strong>.</li></ol>`}
     </details>`;
+}
+
+// ── Notifications ──
+export async function loadNotifications(me) {
+  const [{ data: p }, { data: decl }] = await Promise.all([
+    sb.from('staff_profiles').select('*').eq('staff_id', me.id).maybeSingle(),
+    sb.from('suitability_declarations').select('signed_at').eq('staff_id', me.id).order('signed_at', { ascending: false }).limit(1),
+  ]);
+  return staffNotifications(p, { lastDeclarationAt: decl?.[0]?.signed_at || null });
 }
