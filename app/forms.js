@@ -1,20 +1,14 @@
-// Staff app › "Forms": the suitability (safeguarding) declaration and the accident form.
+// Staff app › "Forms": the suitability (safeguarding) declaration.
 
 import { sb } from '../shared/supabase.js';
 import { esc, toast } from '../shared/ui.js';
 import { signaturePad } from '../shared/signature.js';
 import { SUIT_TITLE, suitabilityFormHTML, readSuitabilityForm, suitabilityStatus, yesAnswers } from '../shared/suitability.js';
-import { renderAccidents } from './accident.js';
 
-const FORMS = [['suitability', 'Suitability declaration'], ['accident', 'Accident form']];
-let formTab = 'suitability';
-
+// Accident forms are recorded by admins (admin › Forms › Accident forms), not in the staff app.
 export function renderForms(pane, me) {
-  pane.innerHTML = `<div class="subtabs">${FORMS.map(([k, l]) => `<button data-ft="${k}" class="${formTab === k ? 'active' : ''}">${l}</button>`).join('')}</div>
-    <div id="formPane"><p class="center muted">Loading…</p></div>`;
-  pane.querySelectorAll('[data-ft]').forEach(b => b.onclick = () => { formTab = b.dataset.ft; renderForms(pane, me); });
-  const box = pane.querySelector('#formPane');
-  return formTab === 'accident' ? renderAccidents(box, me) : renderSuitability(box, me);
+  pane.innerHTML = '<div id="formPane"><p class="center muted">Loading…</p></div>';
+  return renderSuitability(pane.querySelector('#formPane'), me);
 }
 
 const day = ts => new Date(ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
