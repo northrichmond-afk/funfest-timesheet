@@ -308,8 +308,8 @@ export async function attendancePane(box, ctx, force = false) {
           <td><strong>${esc(k.name)}</strong>${k.socialWorker ? ' <span class="pill warn">social worker</span>' : ''}</td>
           <td class="small">${esc(k.ageGroup)}</td>
           <td class="small">${k.activities.map(esc).join('<br>')}</td>
-          <td>${r.arrived_at ? `<button class="small" data-unarr="${esc(k.key)}">✅ ${hm(r.arrived_at)}</button>` : `<button class="primary small" data-arr="${esc(k.key)}">Arrived</button>`}</td>
-          <td>${r.departed_at ? `<button class="small" data-undep="${esc(k.key)}">✅ ${hm(r.departed_at)}${r.collected_by ? `<div class="muted">${esc(r.collected_by)}</div>` : ''}</button>`
+          <td>${r.arrived_at ? `<button class="small" data-unarr="${esc(k.key)}">✅ ${hm(r.arrived_at)}${r.arrival_signature ? ' ✍️' : ''}${r.dropped_off_by ? `<div class="muted">${esc(r.dropped_off_by)}</div>` : ''}</button>` : `<button class="primary small" data-arr="${esc(k.key)}">Arrived</button>`}</td>
+          <td>${r.departed_at ? `<button class="small" data-undep="${esc(k.key)}">✅ ${hm(r.departed_at)}${r.departure_signature ? ' ✍️' : ''}${r.collected_by ? `<div class="muted">${esc(r.collected_by)}</div>` : ''}</button>`
             : `<button class="small" data-dep="${esc(k.key)}" ${r.arrived_at ? '' : 'disabled'}>Departed</button>`}</td>
           <td><button class="small" data-par="${esc(k.key)}">👪 Parent</button></td></tr>`; }).join('')}
       </table></div>`).join('')}` : `<p class="muted">No children booked at ${esc(clubLabel(reg.club))} on ${esc(reg.day)}.</p>`;
@@ -320,16 +320,14 @@ export async function attendancePane(box, ctx, force = false) {
     if (error) toast(error.message, 6000);
     attendancePane(box, ctx);
   };
-  body.querySelectorAll('[data-arr]').forEach(b => b.onclick = () => save(kid(b.dataset.arr), { arrived_at: new Date().toISOString() }));
-  body.querySelectorAll('[data-unarr]').forEach(b => b.onclick = () => {
-    const k = kid(b.dataset.unarr);
-    if (window.confirm(`Undo ${k.name}'s arrival?`)) save(k, { arrived_at: null, departed_at: null, collected_by: null }); // eslint-disable-line no-alert
-  });
-  body.querySelectorAll('[data-undep]').forEach(b => b.onclick = () => {
-    const k = kid(b.dataset.undep);
-    if (window.confirm(`Undo ${k.name}'s departure?`)) save(k, { departed_at: null, collected_by: null }); // eslint-disable-line no-alert
-  });
-  body.querySelectorAll('[data-dep]').forEach(b => b.onclick = () => departDialog(ctx, kid(b.dataset.dep), (who) => save(kid(b.dataset.dep), { departed_at: new Date().toISOString(), collected_by: who || null })));
+  body.querySelectorAll('[data-arr]').forEach(b => b.onclick = () => signDialog(ctx, kid(b.dataset.arr), 'arrive',
+    (who, sig) => save(kid(b.dataset.arr), { arrived_at: new Date().toISOString(), dropped_off_by: who || null, arrival_signature: sig })));
+  body.querySelectorAll('[data-unarr]').forEach(b => b.onclick = () => recordDialog(ctx, kid(b.dataset.unarr), A[b.dataset.unarr], 'arrive',
+    () => save(kid(b.dataset.unarr), { arrived_at: null, dropped_off_by: null, arrival_signature: null, departed_at: null, collected_by: null, departure_signature: null })));
+  body.querySelectorAll('[data-undep]').forEach(b => b.onclick = () => recordDialog(ctx, kid(b.dataset.undep), A[b.dataset.undep], 'depart',
+    () => save(kid(b.dataset.undep), { departed_at: null, collected_by: null, departure_signature: null })));
+  body.querySelectorAll('[data-dep]').forEach(b => b.onclick = () => signDialog(ctx, kid(b.dataset.dep), 'depart',
+    (who, sig) => save(kid(b.dataset.dep), { departed_at: new Date().toISOString(), collected_by: who || null, departure_signature: sig })));
   body.querySelectorAll('[data-par]').forEach(b => b.onclick = () => parentDialog(ctx, kid(b.dataset.par)));
 }
 
@@ -352,14 +350,54 @@ function parentDialog(ctx, k) {
   dlg.showModal();
 }
 
-function departDialog(ctx, k, done) {
+// Drop-off / collection: the parent (or whoever brings or collects the child) signs on the club device
+function signDialog(ctx, k, kind, done) {
   const dlg = ctx.dlg;
-  dlg.innerHTML = `<form class="stack" style="min-width:min(420px,100%)">
-    <h2>${esc(k.name)} is going home</h2>
-    <label>Collected by<input name="who" value="${esc(k.parent.name || '')}" autocomplete="off"></label>
-    <p class="small muted">Check the person collecting is on the child’s collection list (👪 Parent shows the booking details).</p>
-    <div style="display:flex;gap:.5rem"><button class="primary">Confirm departure</button><button type="button" id="dX">Cancel</button></div></form>`;
+  const arrive = kind === 'arrive';
+  dlg.innerHTML = `<form class="stack" style="min-width:min(460px,100%)">
+    <h2>${esc(k.name)} ${arrive ? 'has arrived' : 'is going home'}</h2>
+    <label>${arrive ? 'Dropped off by' : 'Collected by'}<input name="who" value="${esc(k.parent.name || '')}" autocomplete="off"></label>
+    ${arrive ? '' : '<p class="small muted">Check the person collecting is on the child’s collection list (👪 Parent shows the booking details).</p>'}
+    <div><div class="small" style="font-weight:600;margin-bottom:.3rem">${arrive ? 'Parent’s signature (drop-off)' : 'Signature of the person collecting'}</div>
+      <canvas id="sgPad" class="sigpad"></canvas><button type="button" id="sgClear" class="small">Clear</button></div>
+    <div class="msgs"></div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+      <button class="primary">✍️ ${arrive ? 'Sign in' : 'Sign out'}</button>
+      <button type="button" id="sgNoSig">${arrive ? 'Arrived' : 'Departed'} without signature</button>
+      <button type="button" id="sgX">Cancel</button></div></form>`;
   dlg.showModal();
-  dlg.querySelector('#dX').onclick = () => dlg.close();
-  dlg.querySelector('form').onsubmit = (ev) => { ev.preventDefault(); const who = ev.target.querySelector('[name=who]').value.trim(); dlg.close(); done(who); };
+  const pad = signaturePad(dlg.querySelector('#sgPad'));
+  const who = () => dlg.querySelector('[name=who]').value.trim();
+  dlg.querySelector('#sgClear').onclick = () => pad.clear();
+  dlg.querySelector('#sgX').onclick = () => dlg.close();
+  dlg.querySelector('#sgNoSig').onclick = () => { dlg.close(); done(who(), null); };
+  dlg.querySelector('form').onsubmit = (ev) => {
+    ev.preventDefault();
+    if (pad.isEmpty()) { dlg.querySelector('.msgs').innerHTML = '<div class="msg bad">Please sign in the box (or use “without signature”).</div>'; return; }
+    const sig = pad.toDataURL();
+    dlg.close();
+    done(who(), sig);
+  };
+}
+
+// What was recorded at drop-off / collection, with the signature; undo from here
+function recordDialog(ctx, k, r, kind, undo) {
+  const dlg = ctx.dlg;
+  const arrive = kind === 'arrive';
+  const sig = arrive ? r.arrival_signature : r.departure_signature;
+  const who = arrive ? r.dropped_off_by : r.collected_by;
+  dlg.innerHTML = `<div class="stack" style="min-width:min(420px,100%)">
+    <h2>${esc(k.name)}: ${arrive ? 'arrived' : 'went home'} ${hm(arrive ? r.arrived_at : r.departed_at)}</h2>
+    <p>${arrive ? 'Dropped off by' : 'Collected by'}: <b>${esc(who || '—')}</b></p>
+    ${sig ? `<img src="${sig}" alt="Signature" style="max-width:100%;border:1px solid var(--line);border-radius:8px;background:#fff">` : '<p class="muted">No signature.</p>'}
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+      <button type="button" id="rdUndo" class="danger">Undo ${arrive ? 'arrival' : 'departure'}</button>
+      <button type="button" id="rdX" class="primary">Close</button></div></div>`;
+  dlg.showModal();
+  dlg.querySelector('#rdX').onclick = () => dlg.close();
+  dlg.querySelector('#rdUndo').onclick = () => {
+    if (!window.confirm(`Undo ${k.name}'s ${arrive ? 'arrival (and departure)' : 'departure'}? The signature is removed too.`)) return; // eslint-disable-line no-alert
+    dlg.close();
+    undo();
+  };
 }
