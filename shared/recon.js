@@ -285,6 +285,19 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
   };
   const nsiOrVoucher = (p, s) => s.scheme !== 'card' && toDay(p.created_at) >= addDays(from, -60) && pounds(s.amount - (s.refunded || 0)) > 0;
   // First pass: a credit of exactly a booking's amount goes to that booking, before any sharing out
+  // A booking paid straight from the parent's Tax-Free Childcare account (no PonchoPay record):
+  // a credit with the child's letters and exactly the booking's amount, soon after it, is that booking's
+  const paidVia = new Set(payments.map(p => `${p.site}|${p.order_id}`));
+  const directTfc = new Map();
+  for (const o of [...orders].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))) {
+    const k = `${o.site}|${o.order_id}`;
+    const due = pounds(o.total - (o.refunded || 0));
+    if (paidVia.has(k) || due <= 0 || NOT_DUE.has(o.status) || ['refunded', 'staff-member'].includes(o.status) || toDay(o.created_at) < from) continue;
+    const stems = refStems(o.children);
+    if (!stems.length) continue;
+    const c = stemPool(stems).find(x => x.left > 0.004 && same(x.left, due) && x.date >= addDays(o.created_at, -7) && x.date <= addDays(o.created_at, 45));
+    if (c) { c.left = 0; directTfc.set(k, c); }
+  }
   const exactClaim = new Map();
   for (const { p, s } of allSubs) {
     if (!nsiOrVoucher(p, s)) continue;
@@ -376,6 +389,11 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
     const transit = pounds(subs.filter(s => s.state === 'paidout').reduce((a, s) => a + s.net - (s.covered || 0), 0));
     const fees = pounds(subs.reduce((a, s) => a + (s.fee || 0), 0));
     const direct = [];
+    if (directTfc.has(k)) {
+      const c = directTfc.get(k);
+      c.used = { type: 'tax-free-childcare', ref: `${SITES[o.site] || o.site} #${o.number}` };
+      direct.push({ credit: c, amount: due }); received = pounds(received + due);
+    }
     // the parent's own bank transfer: the order number in the reference, or the surname and the exact amount
     if (due > 0 && received < due - 0.01 && !NOT_DUE.has(o.status)) {
       const numRe = new RegExp(`(^|\\D)${String(o.number).replace(/\D/g, '')}(\\D|$)`);

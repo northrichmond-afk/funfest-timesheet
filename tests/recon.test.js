@@ -244,3 +244,16 @@ test('reconcile: a cancelled order with an unpaid PonchoPay record is not due', 
   const r = reconcile({ orders: [o], payments: [pay], bank: [] }, { today: '2026-11-24' });
   assert.equal(r.rows[0].status, 'notdue');
 });
+
+test('reconcile: a booking paid straight from Tax-Free Childcare (no PonchoPay) takes its exact credit', () => {
+  const bank = parseHsbcCsv(`Date,Type,Description,Paid Out,Paid In,Balance
+17 Aug 2026,CR,"NATIONAL SAVINGS A SSTA16955",,40.00,`, 's');
+  const big = compactPonchoPayment({ uuid: 'b', reference: 'PP-b', amount: 13600, createdDate: '2026-08-07T10:00:00Z', completedDate: '2026-08-07T10:00:00Z', children: [{ name: 'Sienna Stanbury' }],
+    integration: { metadata: '2616', location: 'https://fun-fest.co.uk/northrichmond' },
+    subsidies: [{ scheme: 'tax-free-childcare', amount: 13600, refunds: [], payments: [], childReferenceCode: 'SSTA16955TFC' }] });
+  const ord = (id, day, total) => ({ site: 'northrichmond', order_id: id, number: String(id), status: 'completed', created_at: `2026-08-${day}T09:00:00Z`, total, refunded: 0, children: 'Sienna Stanbury' });
+  const r = reconcile({ orders: [ord(2616, '07', 136), ord(2727, '17', 40)], payments: [big], bank }, { today: '2026-11-24' });
+  const st = Object.fromEntries(r.rows.map(x => [x.order.order_id, x.status]));
+  assert.equal(st[2727], 'paid');
+  assert.equal(st[2616], 'missing');
+});
