@@ -293,6 +293,7 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
     const c = w.exactFrom.find(x => x.left > 0.004 && same(x.left, net) && x.date >= w.after && x.date <= w.before);
     if (c) { c.left = 0; exactClaim.set(s, c); }
   }
+  const late = [];
   for (const { p, s } of allSubs) {
     const net = pounds(s.amount - (s.refunded || 0));
     const r = { ...s, reference: p.reference, net, state: 'awaiting', covered: 0, credits: [], payout: null };
@@ -316,10 +317,19 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
       r.covered = t.covered; r.credits = t.used;
       for (const u of t.used) u.credit.used = u.credit.used || { type: s.scheme, ref: p.reference };
       r.state = t.covered >= net - 0.01 ? 'received' : t.covered > 0 ? 'part' : 'awaiting';
+      if (r.state !== 'received') late.push({ p, s, r, w });
     }
     // PonchoPay says it's in the bank, but the statements we have end before that date
     if (r.state !== 'received' && r.state !== 'refunded' && s.inBank && toDay(s.inBank) > bankTo) r.state = r.state === 'part' ? 'part' : 'paidout';
     p.subs.push(r);
+  }
+  // Second pass: money that arrived late (after the usual window) and that no other booking claimed
+  for (const { p, s, r, w } of late) {
+    const t = take(w.pool, pounds(r.net - r.covered), w.after, '9999', w.exactFrom);
+    if (!t.covered) continue;
+    for (const u of t.used) u.credit.used = u.credit.used || { type: s.scheme, ref: p.reference };
+    r.covered = pounds(r.covered + t.covered); r.credits.push(...t.used);
+    r.state = r.covered >= r.net - 0.01 ? 'received' : 'part';
   }
   const payByOrder = new Map();
   for (const p of pays) {
