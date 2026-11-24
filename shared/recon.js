@@ -202,6 +202,7 @@ export const STATUS = {
   pending: { label: 'Waiting (under 14 days)', cls: 'info' },
   missing: { label: 'Missing', cls: 'bad' },
   manual: { label: 'Marked paid', cls: 'ok' },
+  staff: { label: 'Paid (staff member)', cls: 'ok' },
   refunded: { label: 'Refunded', cls: 'muted' },
   notdue: { label: 'Not due', cls: 'muted' },
 };
@@ -350,7 +351,8 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
     const age = daysBetween(o.created_at, today);
     const override = ov.get(k);
     let status;
-    if (o.status === 'refunded' || (due <= 0 && o.total > 0)) status = 'refunded';
+    if (o.status === 'staff-member') status = 'staff';            // WordPress "Staff Member": a staff booking, counts as paid
+    else if (o.status === 'refunded' || (due <= 0 && o.total > 0)) status = 'refunded';
     else if (NOT_DUE.has(o.status) && !linked.length && !direct.length) status = 'notdue';
     else if (received >= due - 0.01) status = 'paid';
     else if (override?.status === 'paid') status = 'manual';
@@ -365,7 +367,7 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
   const otherCredits = credits.filter(c => c.left > 0.004 && c.date >= from && c.kind === 'other');
   const unmatchedPayments = [...payByOrder.values()].flat().filter(p => toDay(p.created_at) >= from);
   const sum = (list, f) => pounds(list.reduce((a, x) => a + f(x), 0));
-  const due = rows.filter(r => !['refunded', 'notdue'].includes(r.status));
+  const due = rows.filter(r => !['refunded', 'notdue', 'staff'].includes(r.status));
   const totals = {
     orders: due.length,
     expected: sum(due, r => r.due),

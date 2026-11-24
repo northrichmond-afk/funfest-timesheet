@@ -198,7 +198,7 @@ function render(view, settings, data, res) {
   const problems = r => ['missing', 'part'].includes(r.status);
   const q = filter.q.trim().toLowerCase();
   const rows = res.rows.filter(r => (!filter.site || r.order.site === filter.site)
-    && (filter.status === 'all' ? true : filter.status === 'problems' ? problems(r) : r.status === filter.status)
+    && (filter.status === 'all' ? true : filter.status === 'problems' ? problems(r) : filter.status === 'paid' ? ['paid', 'staff'].includes(r.status) : r.status === filter.status)
     && (!q || [r.order.number, r.order.parent, r.order.email, r.order.children, ...r.payments.map(p => p.reference)].join(' ').toLowerCase().includes(q)));
   const stale = d => !d || (Date.now() - new Date(d)) > 2 * 86400000;
   const orderLink = o => `${CLUBS[o.site]?.base || ''}/wp-admin/admin.php?page=wc-orders&action=edit&id=${o.order_id}`;
@@ -215,7 +215,7 @@ function render(view, settings, data, res) {
   ].join('');
   const statusPill = r => `<span class="pill ${STATUS[r.status].cls}">${STATUS[r.status].label}</span>${r.override?.note ? `<div class="small muted">${esc(r.override.note)}</div>` : ''}`;
   const FILTERS = [['problems', `Missing / part paid (${(counts.missing || 0) + (counts.part || 0)})`], ['pending', `Waiting (${counts.pending || 0})`], ['transit', `In transit (${counts.transit || 0})`],
-    ['paid', `Paid (${counts.paid || 0})`], ['manual', `Marked paid (${counts.manual || 0})`], ['all', `All (${res.rows.length})`]];
+    ['paid', `Paid (${(counts.paid || 0) + (counts.staff || 0)})`], ['manual', `Marked paid (${counts.manual || 0})`], ['all', `All (${res.rows.length})`]];
 
   view.innerHTML = `
     <div class="card">
