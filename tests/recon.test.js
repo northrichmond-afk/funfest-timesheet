@@ -235,3 +235,12 @@ test('reconcile: a same-amount credit with another known child’s letters is no
   assert.equal(st[2880], 'paid');
   assert.equal(st[5941], 'missing');
 });
+
+test('reconcile: a cancelled order with an unpaid PonchoPay record is not due', () => {
+  const pay = compactPonchoPayment({ uuid: 'c', reference: 'PP-c', amount: 7300, createdDate: '2026-03-11T10:00:00Z', completedDate: '2026-03-11T10:00:00Z', children: [{ name: 'Audrey Pastore' }],
+    integration: { metadata: '1924', location: 'https://fun-fest.co.uk/northrichmond' },
+    subsidies: [{ scheme: 'tax-free-childcare', amount: 7300, refunds: [], payments: [], childReferenceCode: 'APAS38619TFC' }] });
+  const o = { site: 'northrichmond', order_id: 1924, number: '1924', status: 'cancelled', created_at: '2026-03-11T09:00:00Z', total: 73, refunded: 0 };
+  const r = reconcile({ orders: [o], payments: [pay], bank: [] }, { today: '2026-11-24' });
+  assert.equal(r.rows[0].status, 'notdue');
+});

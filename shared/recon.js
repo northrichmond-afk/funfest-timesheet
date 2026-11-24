@@ -392,7 +392,8 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
     let status;
     if (o.status === 'staff-member') status = 'staff';            // WordPress "Staff Member": a staff booking, counts as paid
     else if (o.status === 'refunded' || (due <= 0 && o.total > 0)) status = 'refunded';
-    else if (NOT_DUE.has(o.status) && !linked.length && !direct.length) status = 'notdue';
+    // cancelled / failed / unpaid orders aren't owed, even when PonchoPay has a payment record for them
+    else if (NOT_DUE.has(o.status) && received < due - 0.01) status = 'notdue';
     else if (received >= due - 0.01) status = 'paid';
     else if (override?.status === 'paid') status = 'manual';
     else if (received + transit >= due - 0.01) status = 'transit';
