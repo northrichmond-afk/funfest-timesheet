@@ -260,7 +260,7 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
   allSubs.sort((a, b) => viaNsi(a.s) - viaNsi(b.s));
   for (const { p, s } of allSubs) {
     const net = pounds(s.amount - (s.refunded || 0));
-    const r = { ...s, net, state: 'awaiting', covered: 0, credits: [], payout: null };
+    const r = { ...s, reference: p.reference, net, state: 'awaiting', covered: 0, credits: [], payout: null };
     if (net <= 0) r.state = 'refunded';
     else if (s.scheme === 'card') {
       const payout = (s.payIds || []).map(id => payoutByPay.get(id)).find(Boolean);
