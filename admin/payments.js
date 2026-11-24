@@ -209,6 +209,7 @@ function render(view, settings, data, res) {
         : bank ? `bank ${fmtD(bank.date)}${s.credits.length > 1 ? ` +${s.credits.length - 1}` : ''}${/mryj/i.test(bank.description) ? ' (via MRYJ)' : ''}` : (s.inBank ? 'PonchoPay says paid, not found in bank' : 'not received');
       return `<div><span class="pill ${s.state === 'received' ? 'ok' : s.state === 'refunded' ? 'muted' : s.state === 'paidout' ? 'info' : 'warn'}">${esc(SCHEME[s.scheme] || s.scheme)} ${gbp(s.net)}</span> <b>${esc(s.reference || '')}</b> <span class="muted">${esc(s.childRef || s.provider || '')}</span> ${how}</div>`;
     }),
+    ...(r.from.length ? [`<div class="muted">Paid on the earlier booking ${r.from.map(o => '#' + esc(o.number)).join(', ')} (changed booking)</div>`] : []),
     ...r.direct.map(u => `<div><span class="pill ok">Bank transfer ${gbp(u.amount)}</span> ${fmtD(u.credit.date)} <span class="muted">${esc(u.credit.description)}</span></div>`),
     ...(r.payments.length || r.direct.length ? [] : [`<span class="muted">${esc(r.order.payment_title || 'No payment found')}</span>`]),
   ].join('');

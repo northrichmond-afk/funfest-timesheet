@@ -185,6 +185,8 @@ export function compactOrder(o, site) {
     parent: [b.first_name, b.last_name].filter(Boolean).join(' ') || null,
     email: b.email || null,
     children: [...kids].filter(Boolean).join(', ') || null,
+    booking_id: (o.meta_data || []).find(m => m.key === 'booking_id')?.value || null,
+    previous_booking: (o.meta_data || []).find(m => m.key === 'previous_booking')?.value || null,
   };
 }
 
@@ -297,6 +299,29 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
   }
   const ov = new Map(overrides.map(o => [`${o.site}|${o.order_id}`, o]));
 
+  // A changed booking: the website cancels the old order and makes a new one with
+  // previous_booking = the old order's booking_id. The payment stays on the old order, so carry
+  // it (following a chain of changes) to the new one.
+  const byBooking = new Map(orders.filter(o => o.booking_id).map(o => [`${o.site}|${o.booking_id}`, o]));
+  const carried = new Map();   // new order key → [old orders whose payments it took]
+  const replaced = o => o.status === 'cancelled' || o.status === 'refunded' || o.status === 'failed' || o.status === 'trash';
+  for (const o of [...orders].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))) {
+    let prev = o.previous_booking && byBooking.get(`${o.site}|${o.previous_booking}`);
+    const k = `${o.site}|${o.order_id}`;
+    const seen = new Set([k]);
+    while (prev && !seen.has(`${prev.site}|${prev.order_id}`) && replaced(prev)) {
+      const pk = `${prev.site}|${prev.order_id}`;
+      seen.add(pk);
+      const moved = payByOrder.get(pk);
+      if (moved?.length) {
+        payByOrder.set(k, [...(payByOrder.get(k) || []), ...moved]);
+        payByOrder.delete(pk);
+        carried.set(k, [...(carried.get(k) || []), prev]);
+      }
+      prev = prev.previous_booking && byBooking.get(`${prev.site}|${prev.previous_booking}`);
+    }
+  }
+
   // 3. orders
   const rows = [];
   const inRange = orders.filter(o => toDay(o.created_at) >= from).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
@@ -332,7 +357,7 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
     else if (received + transit >= due - 0.01) status = 'transit';
     else if (received > 0) status = 'part';
     else status = age > grace ? 'missing' : 'pending';
-    rows.push({ order: o, due, received, transit, fees, payments: linked, subs, direct, status, override, age });
+    rows.push({ order: o, due, received, transit, fees, payments: linked, subs, direct, status, override, age, from: carried.get(k) || [] });
   }
 
   // PonchoPay / Tax-Free Childcare / voucher credits not tied to an order, and other money in
