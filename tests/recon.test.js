@@ -206,3 +206,16 @@ test('reconcile: WordPress status "Staff Member" counts as paid and is not expec
   assert.equal(r.totals.orders, 0);
   assert.equal(r.totals.missing, 0);
 });
+
+test('reconcile: an old booking can’t take a TFC credit from months later', () => {
+  const bank = parseHsbcCsv(`Date,Type,Description,Paid Out,Paid In,Balance
+29 Oct 2026,CR,"NATIONAL SAVINGS A AHUT39574",,24.00,`, 's');
+  const tfc = (id, day) => compactPonchoPayment({ uuid: 'h' + id, reference: 'PP-h' + id, amount: 2400, createdDate: `${day}T10:00:00Z`, completedDate: `${day}T10:00:00Z`,
+    integration: { metadata: String(id), location: 'https://fun-fest.co.uk/hounslow' },
+    subsidies: [{ scheme: 'tax-free-childcare', amount: 2400, refunds: [], payments: [], childReferenceCode: 'AHUT39574TFC' }] });
+  const ord = (id, day) => ({ site: 'hounslow', order_id: id, number: String(id), status: 'completed', created_at: `${day}T09:00:00Z`, total: 24, refunded: 0 });
+  const r = reconcile({ orders: [ord(5823, '2026-08-17'), ord(5947, '2026-10-28')], payments: [tfc(5823, '2026-08-17'), tfc(5947, '2026-10-28')], bank }, { today: '2026-11-24' });
+  const st = Object.fromEntries(r.rows.map(x => [x.order.order_id, x.status]));
+  assert.equal(st[5947], 'paid');
+  assert.equal(st[5823], 'missing');
+});

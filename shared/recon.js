@@ -239,11 +239,15 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
   //    credits, or one credit covers several bookings, so credits are shared out (oldest first)
   //    among the bookings with the same child reference / voucher provider.
   const addDays = (iso, n) => { const d = new Date(toDay(iso) + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
-  const take = (pool, amount, after) => {
+  // before: latest credit date allowed (Tax-Free Childcare / vouchers arrive within weeks of the booking)
+  const take = (pool, amount, after, before = '9999', exactFrom = pool) => {
     let need = amount; const used = [];
-    for (const c of pool) {
+    const open = c => c.left > 0.004 && c.date >= after && c.date <= before;
+    // one credit of exactly the amount wins; otherwise share credits out oldest first
+    const exact = exactFrom.find(c => open(c) && same(c.left, amount));
+    for (const c of exact ? [exact] : pool) {
       if (need <= 0.004) break;
-      if (c.left <= 0.004 || c.date < after) continue;
+      if (!open(c)) continue;
       const x = Math.min(c.left, need);
       c.left = pounds(c.left - x); need = pounds(need - x);
       used.push({ credit: c, amount: pounds(x) });
@@ -275,10 +279,11 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
     } else if (toDay(p.created_at) >= addDays(from, -60)) {
       const refs = tfcRefs(s.childRef);
       const stems = refStems(p.children);
+      const named = viaNsi(s) && stems.length ? stemPool(stems) : null;   // credits carrying the child's letters come first
       const pool = viaNsi(s) ? (p.completed_at ? [...(stems.length ? stemPool(stems) : []), ...exactTfc(net, addDays(p.created_at, -7)), ...(s.scheme === 'childcare-voucher' ? voucherPool('grant') : [])] : [])
         : s.scheme === 'tax-free-childcare' ? tfcPool(refs)
           : voucherPool(voucherKey(s.provider));
-      const t = take(pool, net, addDays(p.created_at, -7));
+      const t = take(pool, net, addDays(p.created_at, -7), addDays(p.created_at, s.scheme === 'tax-free-childcare' ? 45 : 90), named?.length ? named : pool);
       // Hounslow Tax-Free Childcare / vouchers that went to the previous owner arrive in bulk from MRYJ Ltd
       if (t.covered < net - 0.01 && p.site === 'hounslow') {
         const f = take(credits.filter(c => c.kind === 'forwarded'), pounds(net - t.covered), addDays(p.created_at, -7));
