@@ -285,19 +285,6 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
   };
   const nsiOrVoucher = (p, s) => s.scheme !== 'card' && toDay(p.created_at) >= addDays(from, -60) && pounds(s.amount - (s.refunded || 0)) > 0;
   // First pass: a credit of exactly a booking's amount goes to that booking, before any sharing out
-  // A booking paid straight from the parent's Tax-Free Childcare account (no PonchoPay record):
-  // a credit with the child's letters and exactly the booking's amount, soon after it, is that booking's
-  const paidVia = new Set(payments.map(p => `${p.site}|${p.order_id}`));
-  const directTfc = new Map();
-  for (const o of [...orders].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))) {
-    const k = `${o.site}|${o.order_id}`;
-    const due = pounds(o.total - (o.refunded || 0));
-    if (paidVia.has(k) || due <= 0 || NOT_DUE.has(o.status) || ['refunded', 'staff-member'].includes(o.status) || toDay(o.created_at) < from) continue;
-    const stems = refStems(o.children);
-    if (!stems.length) continue;
-    const c = stemPool(stems).find(x => x.left > 0.004 && same(x.left, due) && x.date >= addDays(o.created_at, -7) && x.date <= addDays(o.created_at, 45));
-    if (c) { c.left = 0; directTfc.set(k, c); }
-  }
   const exactClaim = new Map();
   for (const { p, s } of allSubs) {
     if (!nsiOrVoucher(p, s)) continue;
@@ -305,6 +292,19 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
     const w = poolFor(p, s, net);
     const c = w.exactFrom.find(x => x.left > 0.004 && same(x.left, net) && x.date >= w.after && x.date <= w.before);
     if (c) { c.left = 0; exactClaim.set(s, c); }
+  }
+  // A booking paid straight from the parent's Tax-Free Childcare account (no PonchoPay record):
+  // a credit with the child's letters and exactly the booking's amount, soon after it, is that booking's
+  const paidVia = new Set(payments.map(p => `${p.site}|${p.order_id}`));
+  const directTfc = new Map();
+  for (const o of [...orders].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))) {
+    const k = `${o.site}|${o.order_id}`;
+    const due = pounds(o.total - (o.refunded || 0));
+    if (paidVia.has(k) || o.previous_booking || due <= 0 || NOT_DUE.has(o.status) || ['refunded', 'staff-member'].includes(o.status) || toDay(o.created_at) < from) continue;
+    const stems = refStems(o.children);
+    if (!stems.length) continue;
+    const c = stemPool(stems).find(x => x.left > 0.004 && same(x.left, due) && x.date >= addDays(o.created_at, -7) && x.date <= addDays(o.created_at, 45));
+    if (c) { c.left = 0; directTfc.set(k, c); }
   }
   const late = [];
   for (const { p, s } of allSubs) {
