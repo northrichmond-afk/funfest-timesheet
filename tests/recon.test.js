@@ -199,3 +199,10 @@ test('reconcile: a changed booking keeps the payment of the cancelled order it r
   assert.deepEqual(by[1766].from.map(x => x.order_id), [1758]);
   assert.equal(r.unmatchedPayments.length, 0);
 });
+
+test('reconcile: WordPress status "Staff Member" counts as paid and is not expected money', () => {
+  const r = reconcile({ orders: [{ site: 'northrichmond', order_id: 900, number: '900', status: 'staff-member', created_at: '2026-02-01T10:00:00Z', total: 40, refunded: 0 }] }, { today: '2026-04-01' });
+  assert.equal(r.rows[0].status, 'staff');
+  assert.equal(r.totals.orders, 0);
+  assert.equal(r.totals.missing, 0);
+});
