@@ -45,6 +45,25 @@ export const CLUB_DEFAULTS = CLUBS.northrichmond;
 const getJSON = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) || d; } catch { return d; } };
 const setJSON = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private mode */ } };
 export const conn = () => ({ user: '', pass: '', ...getJSON(LS_CONN, {}) });
+
+/**
+ * Put the WordPress login back in this browser if it has been cleared (Chrome can delete site
+ * data when it closes), from the copy saved in the database for the daily order fetch.
+ */
+export async function ensureConn() {
+  const c = conn();
+  if (c.user && c.pass) return c;
+  try {
+    const { sb } = await import('../shared/supabase.js');
+    const { data } = await sb.rpc('recon_get_wp_login');
+    if (data?.user && data?.pass) { setJSON(LS_CONN, { user: data.user, pass: data.pass }); return conn(); }
+  } catch { /* not set up yet */ }
+  return c;
+}
+/** Keep the database copy in step when the login is changed here. */
+async function saveConnToDb(user, pass) {
+  try { const { sb } = await import('../shared/supabase.js'); await sb.rpc('recon_set_wp_login', { p_user: user, p_pass: pass }); } catch { /* not set up yet */ }
+}
 let clubId = (() => { try { return CLUBS[localStorage.getItem(LS_SEL)] ? localStorage.getItem(LS_SEL) : 'northrichmond'; } catch { return 'northrichmond'; } })();
 const club = (id = clubId) => ({ ...CLUBS[id], ...getJSON(LS_CLUB + id, {}), id });
 
@@ -130,10 +149,13 @@ export function tabAdmin(view, dlg) {
     ev.preventDefault();
     const f = Object.fromEntries(new FormData(ev.target));
     setJSON(LS_CONN, { user: f.user.trim(), pass: f.pass.trim() });
-    try { await wc('/wp-json/wc/v3/orders?per_page=1'); toast('Connected to WordPress ✓'); tabAdmin(view, dlg); }
+    try { await wc('/wp-json/wc/v3/orders?per_page=1'); await saveConnToDb(f.user.trim(), f.pass.trim()); toast('Connected to WordPress ✓ (also saved for the daily order fetch)'); tabAdmin(view, dlg); }
     catch (e) { toast(e.message, 8000); }
   };
-  view.querySelector('#connForget').onclick = () => { localStorage.removeItem(LS_CONN); toast('Connection removed from this browser'); tabAdmin(view, dlg); };
+  view.querySelector('#connForget').onclick = async () => {
+    if (!window.confirm('Forget the WordPress login on this browser and in the database? Invoices, Attending children and the daily order fetch will stop until it is entered again.')) return; // eslint-disable-line no-alert
+    localStorage.removeItem(LS_CONN); await saveConnToDb('', ''); toast('Connection removed'); tabAdmin(view, dlg);
+  };
   view.querySelector('#invClub').onsubmit = (ev) => {
     ev.preventDefault(); setJSON(LS_CLUB + clubId, Object.fromEntries(new FormData(ev.target))); toast('Saved');
   };
