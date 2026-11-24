@@ -239,11 +239,15 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
   //    credits, or one credit covers several bookings, so credits are shared out (oldest first)
   //    among the bookings with the same child reference / voucher provider.
   const addDays = (iso, n) => { const d = new Date(toDay(iso) + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
-  const take = (pool, amount, after) => {
+  // before: latest credit date allowed (Tax-Free Childcare / vouchers arrive within weeks of the booking)
+  const take = (pool, amount, after, before = '9999', exactFrom = pool) => {
     let need = amount; const used = [];
-    for (const c of pool) {
+    const open = c => c.left > 0.004 && c.date >= after && c.date <= before;
+    // one credit of exactly the amount wins; otherwise share credits out oldest first
+    const exact = exactFrom.find(c => open(c) && same(c.left, amount));
+    for (const c of exact ? [exact] : pool) {
       if (need <= 0.004) break;
-      if (c.left <= 0.004 || c.date < after) continue;
+      if (!open(c)) continue;
       const x = Math.min(c.left, need);
       c.left = pounds(c.left - x); need = pounds(need - x);
       used.push({ credit: c, amount: pounds(x) });
@@ -255,12 +259,41 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
   const tfcPool = refs => credits.filter(c => c.kind === 'tfc' && refs.some(r => c.description.toUpperCase().includes(r)));
   const stemPool = stems => credits.filter(c => c.kind === 'tfc' && stems.some(st => new RegExp(`\\b${st}\\d{5}\\b`).test(c.description.toUpperCase())));
   const voucherPool = key => credits.filter(c => c.kind === 'voucher' && [key, 'other'].includes(bankVoucherKey(c.description)));
-  const exactTfc = (amount, after) => credits.filter(c => c.kind === 'tfc' && c.left > 0.004 && same(c.left, amount) && c.date >= after).slice(0, 1);
+  // Children we know by reference or name: a credit carrying one of their reference letters isn't
+  // up for grabs by another family's booking just because the amount is the same
+  const knownStems = new Set(payments.flatMap(p => [
+    ...(p.subsidies || []).flatMap(s => tfcRefs(s.childRef).map(r => r.slice(0, 4))),
+    ...refStems(p.children),
+  ]));
+  const creditStem = c => (c.description.toUpperCase().match(/\b([A-Z]{4})\d{5}\b/) || [])[1];
+  const exactTfc = (amount, after, own = []) => credits.filter(c => c.kind === 'tfc' && c.left > 0.004 && same(c.left, amount) && c.date >= after
+    && (!knownStems.has(creditStem(c)) || own.includes(creditStem(c)))).slice(0, 1);
   // Tax-Free Childcare without a child reference, and the Childcare Grant (paid through the same
   // government childcare service, so it also arrives as "NATIONAL SAVINGS …"), are matched by amount
   // after everything with a reference has had its pick of the credits.
   const viaNsi = s => (s.scheme === 'tax-free-childcare' && !tfcRefs(s.childRef).length) || (s.scheme === 'childcare-voucher' && voucherKey(s.provider) === 'grant');
   allSubs.sort((a, b) => viaNsi(a.s) - viaNsi(b.s));
+  // Where each Tax-Free Childcare / voucher booking may find its money
+  const poolFor = (p, s, net) => {
+    const refs = tfcRefs(s.childRef);
+    const stems = refStems(p.children);
+    const named = viaNsi(s) && stems.length ? stemPool(stems) : null;   // credits carrying the child's letters come first
+    const pool = viaNsi(s) ? (p.completed_at ? [...(named || []), ...exactTfc(net, addDays(p.created_at, -7), stems), ...(s.scheme === 'childcare-voucher' ? voucherPool('grant') : [])] : [])
+      : s.scheme === 'tax-free-childcare' ? tfcPool(refs)
+        : voucherPool(voucherKey(s.provider));
+    return { pool, exactFrom: named?.length ? named : pool, after: addDays(p.created_at, -7), before: addDays(p.created_at, s.scheme === 'tax-free-childcare' ? 45 : 90) };
+  };
+  const nsiOrVoucher = (p, s) => s.scheme !== 'card' && toDay(p.created_at) >= addDays(from, -60) && pounds(s.amount - (s.refunded || 0)) > 0;
+  // First pass: a credit of exactly a booking's amount goes to that booking, before any sharing out
+  const exactClaim = new Map();
+  for (const { p, s } of allSubs) {
+    if (!nsiOrVoucher(p, s)) continue;
+    const net = pounds(s.amount - (s.refunded || 0));
+    const w = poolFor(p, s, net);
+    const c = w.exactFrom.find(x => x.left > 0.004 && same(x.left, net) && x.date >= w.after && x.date <= w.before);
+    if (c) { c.left = 0; exactClaim.set(s, c); }
+  }
+  const late = [];
   for (const { p, s } of allSubs) {
     const net = pounds(s.amount - (s.refunded || 0));
     const r = { ...s, reference: p.reference, net, state: 'awaiting', covered: 0, credits: [], payout: null };
@@ -273,12 +306,9 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
         else r.state = 'paidout';
       }
     } else if (toDay(p.created_at) >= addDays(from, -60)) {
-      const refs = tfcRefs(s.childRef);
-      const stems = refStems(p.children);
-      const pool = viaNsi(s) ? (p.completed_at ? [...(stems.length ? stemPool(stems) : []), ...exactTfc(net, addDays(p.created_at, -7)), ...(s.scheme === 'childcare-voucher' ? voucherPool('grant') : [])] : [])
-        : s.scheme === 'tax-free-childcare' ? tfcPool(refs)
-          : voucherPool(voucherKey(s.provider));
-      const t = take(pool, net, addDays(p.created_at, -7));
+      const w = poolFor(p, s, net);
+      const t = exactClaim.has(s) ? { covered: net, used: [{ credit: exactClaim.get(s), amount: net }] }
+        : take(w.pool, net, w.after, w.before, w.exactFrom);
       // Hounslow Tax-Free Childcare / vouchers that went to the previous owner arrive in bulk from MRYJ Ltd
       if (t.covered < net - 0.01 && p.site === 'hounslow') {
         const f = take(credits.filter(c => c.kind === 'forwarded'), pounds(net - t.covered), addDays(p.created_at, -7));
@@ -287,10 +317,19 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
       r.covered = t.covered; r.credits = t.used;
       for (const u of t.used) u.credit.used = u.credit.used || { type: s.scheme, ref: p.reference };
       r.state = t.covered >= net - 0.01 ? 'received' : t.covered > 0 ? 'part' : 'awaiting';
+      if (r.state !== 'received') late.push({ p, s, r, w });
     }
     // PonchoPay says it's in the bank, but the statements we have end before that date
     if (r.state !== 'received' && r.state !== 'refunded' && s.inBank && toDay(s.inBank) > bankTo) r.state = r.state === 'part' ? 'part' : 'paidout';
     p.subs.push(r);
+  }
+  // Second pass: money that arrived late (after the usual window) and that no other booking claimed
+  for (const { p, s, r, w } of late) {
+    const t = take(w.pool, pounds(r.net - r.covered), w.after, '9999', w.exactFrom);
+    if (!t.covered) continue;
+    for (const u of t.used) u.credit.used = u.credit.used || { type: s.scheme, ref: p.reference };
+    r.covered = pounds(r.covered + t.covered); r.credits.push(...t.used);
+    r.state = r.covered >= r.net - 0.01 ? 'received' : 'part';
   }
   const payByOrder = new Map();
   for (const p of pays) {
