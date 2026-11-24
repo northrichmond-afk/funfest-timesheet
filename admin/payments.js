@@ -199,7 +199,7 @@ function render(view, settings, data, res) {
   const q = filter.q.trim().toLowerCase();
   const rows = res.rows.filter(r => (!filter.site || r.order.site === filter.site)
     && (filter.status === 'all' ? true : filter.status === 'problems' ? problems(r) : r.status === filter.status)
-    && (!q || [r.order.number, r.order.parent, r.order.email, r.order.children].join(' ').toLowerCase().includes(q)));
+    && (!q || [r.order.number, r.order.parent, r.order.email, r.order.children, ...r.payments.map(p => p.reference)].join(' ').toLowerCase().includes(q)));
   const stale = d => !d || (Date.now() - new Date(d)) > 2 * 86400000;
   const orderLink = o => `${CLUBS[o.site]?.base || ''}/wp-admin/admin.php?page=wc-orders&action=edit&id=${o.order_id}`;
   const paidBy = r => [
@@ -207,8 +207,9 @@ function render(view, settings, data, res) {
       const bank = s.credits?.[0]?.credit;
       const how = s.scheme === 'card' ? (s.payout ? `${esc(s.payout.reference)} ${s.payout.bank ? '→ bank ' + fmtD(s.payout.bank.date) : '(not in bank yet)'}` : 'not paid out yet')
         : bank ? `bank ${fmtD(bank.date)}${s.credits.length > 1 ? ` +${s.credits.length - 1}` : ''}${/mryj/i.test(bank.description) ? ' (via MRYJ)' : ''}` : (s.inBank ? 'PonchoPay says paid, not found in bank' : 'not received');
-      return `<div><span class="pill ${s.state === 'received' ? 'ok' : s.state === 'refunded' ? 'muted' : s.state === 'paidout' ? 'info' : 'warn'}">${esc(SCHEME[s.scheme] || s.scheme)} ${gbp(s.net)}</span> <span class="muted">${esc(s.childRef || s.provider || '')}</span> ${how}</div>`;
+      return `<div><span class="pill ${s.state === 'received' ? 'ok' : s.state === 'refunded' ? 'muted' : s.state === 'paidout' ? 'info' : 'warn'}">${esc(SCHEME[s.scheme] || s.scheme)} ${gbp(s.net)}</span> <b>${esc(s.reference || '')}</b> <span class="muted">${esc(s.childRef || s.provider || '')}</span> ${how}</div>`;
     }),
+    ...(r.from.length ? [`<div class="muted">Paid on the earlier booking ${r.from.map(o => '#' + esc(o.number)).join(', ')} (changed booking)</div>`] : []),
     ...r.direct.map(u => `<div><span class="pill ok">Bank transfer ${gbp(u.amount)}</span> ${fmtD(u.credit.date)} <span class="muted">${esc(u.credit.description)}</span></div>`),
     ...(r.payments.length || r.direct.length ? [] : [`<span class="muted">${esc(r.order.payment_title || 'No payment found')}</span>`]),
   ].join('');
@@ -229,16 +230,17 @@ function render(view, settings, data, res) {
       <div class="toolbar">
         <label>From<input type="date" id="pmFrom" value="${esc(settings.start_date)}"></label>
         <label>Club<select id="pmSite"><option value="">Both</option>${Object.entries(SITES).map(([k, l]) => `<option value="${k}" ${filter.site === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-        <label>Search<input id="pmQ" value="${esc(filter.q)}" placeholder="order, parent, child"></label>
+        <label>Search<input id="pmQ" value="${esc(filter.q)}" placeholder="order, PP- ref, parent, child"></label>
         <button id="pmCsv">⬇️ CSV</button>
       </div>
       <div class="subtabs">${FILTERS.map(([k, l]) => `<button data-pf="${k}" class="${filter.status === k ? 'active' : ''}">${l}</button>`).join('')}</div>
       ${rows.length ? `<div class="table-wrap"><table>
-        <tr><th>Order</th><th>Date</th><th>Parent / child</th><th>Due</th><th>Received</th><th>Paid by</th><th>Status</th><th></th></tr>
+        <tr><th>Order</th><th>Date</th><th>Parent / child</th><th>Email</th><th>Due</th><th>Received</th><th>Paid by</th><th>Status</th><th></th></tr>
         ${rows.slice(0, 500).map(r => `<tr>
           <td><a href="${esc(orderLink(r.order))}" target="_blank" rel="noopener">#${esc(r.order.number)}</a><div class="small muted">${esc(SITES[r.order.site] || r.order.site)}</div></td>
           <td class="small" style="white-space:nowrap">${fmtD(r.order.created_at)}</td>
           <td class="small">${esc(r.order.parent || '')}${r.order.children ? `<div class="muted">${esc(r.order.children)}</div>` : ''}</td>
+          <td class="small">${r.order.email ? `<a href="mailto:${esc(r.order.email)}">${esc(r.order.email)}</a>` : ''}</td>
           <td>${gbp(r.due)}${r.order.refunded ? `<div class="small muted">refunded ${gbp(r.order.refunded)}</div>` : ''}</td>
           <td>${gbp(r.received)}</td>
           <td class="small">${paidBy(r)}</td>
@@ -301,8 +303,8 @@ function render(view, settings, data, res) {
   $('pmBm').href = bookmarklet();
   $('pmBm').onclick = (e) => { e.preventDefault(); toast('Drag this button onto your bookmarks bar, then click it while PonchoPay is open.', 6000); };
   $('pmCsv').onclick = () => download(`funfest-payments-${new Date().toISOString().slice(0, 10)}.csv`, toCSV([
-    ['Club', 'Order', 'Order date', 'WooCommerce status', 'Parent', 'Email', 'Children', 'Due', 'Received', 'In transit', 'Card fees', 'Status', 'Paid by', 'Note'],
-    ...rows.map(r => [SITES[r.order.site], r.order.number, String(r.order.created_at).slice(0, 10), r.order.status, r.order.parent, r.order.email, r.order.children,
+    ['Club', 'Order', 'PonchoPay reference', 'Order date', 'WooCommerce status', 'Parent', 'Email', 'Children', 'Due', 'Received', 'In transit', 'Card fees', 'Status', 'Paid by', 'Note'],
+    ...rows.map(r => [SITES[r.order.site], r.order.number, r.payments.map(p => p.reference).join(', '), String(r.order.created_at).slice(0, 10), r.order.status, r.order.parent, r.order.email, r.order.children,
       r.due, r.received, r.transit, r.fees, STATUS[r.status].label,
       [...r.subs.map(s => `${SCHEME[s.scheme] || s.scheme} ${s.net} ${s.state}${s.payout ? ' ' + s.payout.reference : ''}${s.credits?.[0] ? ' bank ' + s.credits[0].credit.date : ''}`), ...r.direct.map(u => `bank transfer ${u.amount} ${u.credit.date}`)].join('; '),
       r.override?.note || '']),

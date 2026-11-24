@@ -168,7 +168,7 @@ export function tabAdmin(view, dlg) {
 
 // ── WooCommerce ───────────────────────────────────────────────
 
-export async function wc(path, base = club().base) {
+export async function wc(path, base = club().base, retried = false) {
   const c = conn();
   if (!c.user || !c.pass) throw new Error('Set up the website connection first (bottom of this page).');
   let r;
@@ -179,6 +179,17 @@ export async function wc(path, base = club().base) {
   }
   const body = await r.json().catch(() => null);
   if (body?.message) body.message = String(body.message).replace(/<[^>]*>/g, '').trim();
+  if ((r.status === 401 || r.status === 403) && !retried) {
+    // this browser may have an old login: use the one saved in the database if it's different
+    try {
+      const { sb } = await import('../shared/supabase.js');
+      const { data } = await sb.rpc('recon_get_wp_login');
+      if (data?.user && data?.pass && (data.user !== c.user || data.pass !== c.pass)) {
+        setJSON(LS_CONN, { user: data.user, pass: data.pass });
+        return wc(path, base, true);
+      }
+    } catch { /* no saved copy */ }
+  }
   if (r.status === 401 || r.status === 403) throw new Error(`WordPress refused the login (${body?.message || r.status}). Check the username and application password.`);
   if (r.status === 404) throw new Error(body?.code === 'woocommerce_rest_shop_order_invalid_id' ? 'No order with that number.' : 'Not found on the website.');
   if (!r.ok) throw new Error(body?.message || `Website error ${r.status}`);

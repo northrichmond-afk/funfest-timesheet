@@ -177,3 +177,25 @@ test('reconcile: reference letters from the child’s name (initial + first 3 of
   assert.deepEqual(r.rows[0].subs[0].credits.map(c => c.credit.description), ['NATIONAL SAVINGS A VTAB11111', 'NATIONAL SAVINGS A VTAB11111']);
   assert.equal(r.unmatchedBank.length, 1);   // the other family's £24 is left alone
 });
+
+test('reconcile: a changed booking keeps the payment of the cancelled order it replaced', () => {
+  const pay = compactPonchoPayment({ uuid: 'v', reference: 'PP-VLpdmS', amount: 9900, createdDate: '2026-01-16T17:10:00Z', completedDate: '2026-01-16T17:16:00Z',
+    integration: { metadata: '1758', location: 'https://fun-fest.co.uk/northrichmond' },
+    subsidies: [{ scheme: 'card', amount: 9900, refunds: [], payments: [{ id: 'payV', amount: { value: 9900 } }] }] });
+  const payouts = [{ id: 'po', reference: 'PO-UkatnK', amount: 213, booked_at: '2026-01-19T18:00:00Z', payment_ids: ['payV', 'other'] }];
+  const bank = parseHsbcCsv(`Date,Type,Description,Paid Out,Paid In,Balance
+19 Jan 2026,CR,"Poncho Care Limite PonchoPay payout",,213.00,`, 's');
+  const o = (id, status, created, extra) => ({ site: 'northrichmond', order_id: id, number: String(id), status, created_at: created, total: 99, refunded: 0, ...extra });
+  const orders = [
+    o(1758, 'cancelled', '2026-01-16T17:10:00Z', { booking_id: 'KE38IlLYfO' }),
+    o(1766, 'completed', '2026-01-21T21:01:00Z', { booking_id: 'RXMwSRhfRf', previous_booking: 'KE38IlLYfO' }),
+  ];
+  const r = reconcile({ orders, payments: [pay], payouts, bank }, { today: '2026-02-28' });
+  const by = Object.fromEntries(r.rows.map(x => [x.order.order_id, x]));
+  assert.equal(by[1758].status, 'notdue');
+  assert.equal(by[1766].status, 'paid');
+  assert.equal(by[1766].subs[0].reference, 'PP-VLpdmS');
+  assert.equal(by[1766].subs[0].payout.reference, 'PO-UkatnK');
+  assert.deepEqual(by[1766].from.map(x => x.order_id), [1758]);
+  assert.equal(r.unmatchedPayments.length, 0);
+});
