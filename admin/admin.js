@@ -3,7 +3,7 @@ import { renderLogin, renderNewPassword } from '../shared/login.js';
 import { calcEntry, fmtHours, decimalHours, localDate, localTime, londonDateTime, toCSV } from '../shared/hours.js';
 import { esc, toast, download, setRoleTitle } from '../shared/ui.js';
 import { staffMatches } from '../shared/search.js';
-import { tabAdmin } from './invoice.js';
+import { tabAdmin, ensureConn } from './invoice.js';
 import { criticalIssues } from '../shared/staffdetails.js';
 import { attendancePane } from './today.js';
 import { tabForms } from './forms.js';
@@ -75,7 +75,7 @@ async function boot() {
   document.getElementById('who').textContent = state.me.email;
   document.getElementById('nav').classList.remove('hidden');
   document.querySelectorAll('#nav button').forEach(b => b.onclick = () => go(b.dataset.tab));
-  await loadRef();
+  await Promise.all([loadRef(), ensureConn()]);   // ensureConn: restore the WordPress login if the browser cleared it
   if (location.hash === '#payments-import') {          // opened by the "Fun Fest sync" bookmark on PonchoPay
     listenForPonchoPay(() => go('payments'));
     return go('payments');
