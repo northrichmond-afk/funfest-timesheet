@@ -234,11 +234,12 @@ function render(view, settings, data, res) {
       </div>
       <div class="subtabs">${FILTERS.map(([k, l]) => `<button data-pf="${k}" class="${filter.status === k ? 'active' : ''}">${l}</button>`).join('')}</div>
       ${rows.length ? `<div class="table-wrap"><table>
-        <tr><th>Order</th><th>Date</th><th>Parent / child</th><th>Due</th><th>Received</th><th>Paid by</th><th>Status</th><th></th></tr>
+        <tr><th>Order</th><th>Date</th><th>Parent / child</th><th>Email</th><th>Due</th><th>Received</th><th>Paid by</th><th>Status</th><th></th></tr>
         ${rows.slice(0, 500).map(r => `<tr>
           <td><a href="${esc(orderLink(r.order))}" target="_blank" rel="noopener">#${esc(r.order.number)}</a><div class="small muted">${esc(SITES[r.order.site] || r.order.site)}</div></td>
           <td class="small" style="white-space:nowrap">${fmtD(r.order.created_at)}</td>
           <td class="small">${esc(r.order.parent || '')}${r.order.children ? `<div class="muted">${esc(r.order.children)}</div>` : ''}</td>
+          <td class="small">${r.order.email ? `<a href="mailto:${esc(r.order.email)}">${esc(r.order.email)}</a>` : ''}</td>
           <td>${gbp(r.due)}${r.order.refunded ? `<div class="small muted">refunded ${gbp(r.order.refunded)}</div>` : ''}</td>
           <td>${gbp(r.received)}</td>
           <td class="small">${paidBy(r)}</td>
