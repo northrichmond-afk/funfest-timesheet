@@ -219,3 +219,19 @@ test('reconcile: an old booking can’t take a TFC credit from months later', ()
   assert.equal(st[5947], 'paid');
   assert.equal(st[5823], 'missing');
 });
+
+test('reconcile: a same-amount credit with another known child’s letters is not taken', () => {
+  const bank = parseHsbcCsv(`Date,Type,Description,Paid Out,Paid In,Balance
+22 Oct 2026,CR,"NATIONAL SAVINGS A DALI80677",,80.00,`, 's');
+  const dania = compactPonchoPayment({ uuid: 'd', reference: 'PP-d', amount: 8000, createdDate: '2026-10-13T10:00:00Z', completedDate: '2026-10-13T10:00:00Z', children: [{ name: 'Dania Ali' }],
+    integration: { metadata: '2880', location: 'https://fun-fest.co.uk/northrichmond' },
+    subsidies: [{ scheme: 'tax-free-childcare', amount: 8000, refunds: [], payments: [], childReferenceCode: '' }] });
+  const grant = compactPonchoPayment({ uuid: 'g', reference: 'PP-g', amount: 8000, createdDate: '2026-10-12T10:00:00Z', completedDate: '2026-10-12T10:00:00Z', children: [{ name: 'Beatrice Rotarescu' }],
+    integration: { metadata: '5941', location: 'https://fun-fest.co.uk/hounslow' },
+    subsidies: [{ scheme: 'childcare-voucher', amount: 8000, refunds: [], payments: [], voucherProvider: { name: 'Childcare Grant Payment Service' } }] });
+  const ord = (site, id) => ({ site, order_id: id, number: String(id), status: 'completed', created_at: '2026-10-12T09:00:00Z', total: 80, refunded: 0 });
+  const r = reconcile({ orders: [ord('hounslow', 5941), ord('northrichmond', 2880)], payments: [grant, dania], bank }, { today: '2026-11-24' });
+  const st = Object.fromEntries(r.rows.map(x => [x.order.order_id, x.status]));
+  assert.equal(st[2880], 'paid');
+  assert.equal(st[5941], 'missing');
+});

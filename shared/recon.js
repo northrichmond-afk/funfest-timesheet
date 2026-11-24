@@ -259,7 +259,15 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
   const tfcPool = refs => credits.filter(c => c.kind === 'tfc' && refs.some(r => c.description.toUpperCase().includes(r)));
   const stemPool = stems => credits.filter(c => c.kind === 'tfc' && stems.some(st => new RegExp(`\\b${st}\\d{5}\\b`).test(c.description.toUpperCase())));
   const voucherPool = key => credits.filter(c => c.kind === 'voucher' && [key, 'other'].includes(bankVoucherKey(c.description)));
-  const exactTfc = (amount, after) => credits.filter(c => c.kind === 'tfc' && c.left > 0.004 && same(c.left, amount) && c.date >= after).slice(0, 1);
+  // Children we know by reference or name: a credit carrying one of their reference letters isn't
+  // up for grabs by another family's booking just because the amount is the same
+  const knownStems = new Set(payments.flatMap(p => [
+    ...(p.subsidies || []).flatMap(s => tfcRefs(s.childRef).map(r => r.slice(0, 4))),
+    ...refStems(p.children),
+  ]));
+  const creditStem = c => (c.description.toUpperCase().match(/\b([A-Z]{4})\d{5}\b/) || [])[1];
+  const exactTfc = (amount, after, own = []) => credits.filter(c => c.kind === 'tfc' && c.left > 0.004 && same(c.left, amount) && c.date >= after
+    && (!knownStems.has(creditStem(c)) || own.includes(creditStem(c)))).slice(0, 1);
   // Tax-Free Childcare without a child reference, and the Childcare Grant (paid through the same
   // government childcare service, so it also arrives as "NATIONAL SAVINGS …"), are matched by amount
   // after everything with a reference has had its pick of the credits.
@@ -270,7 +278,7 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
     const refs = tfcRefs(s.childRef);
     const stems = refStems(p.children);
     const named = viaNsi(s) && stems.length ? stemPool(stems) : null;   // credits carrying the child's letters come first
-    const pool = viaNsi(s) ? (p.completed_at ? [...(named || []), ...exactTfc(net, addDays(p.created_at, -7)), ...(s.scheme === 'childcare-voucher' ? voucherPool('grant') : [])] : [])
+    const pool = viaNsi(s) ? (p.completed_at ? [...(named || []), ...exactTfc(net, addDays(p.created_at, -7), stems), ...(s.scheme === 'childcare-voucher' ? voucherPool('grant') : [])] : [])
       : s.scheme === 'tax-free-childcare' ? tfcPool(refs)
         : voucherPool(voucherKey(s.provider));
     return { pool, exactFrom: named?.length ? named : pool, after: addDays(p.created_at, -7), before: addDays(p.created_at, s.scheme === 'tax-free-childcare' ? 45 : 90) };
