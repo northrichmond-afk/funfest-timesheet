@@ -265,6 +265,26 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
   // after everything with a reference has had its pick of the credits.
   const viaNsi = s => (s.scheme === 'tax-free-childcare' && !tfcRefs(s.childRef).length) || (s.scheme === 'childcare-voucher' && voucherKey(s.provider) === 'grant');
   allSubs.sort((a, b) => viaNsi(a.s) - viaNsi(b.s));
+  // Where each Tax-Free Childcare / voucher booking may find its money
+  const poolFor = (p, s, net) => {
+    const refs = tfcRefs(s.childRef);
+    const stems = refStems(p.children);
+    const named = viaNsi(s) && stems.length ? stemPool(stems) : null;   // credits carrying the child's letters come first
+    const pool = viaNsi(s) ? (p.completed_at ? [...(named || []), ...exactTfc(net, addDays(p.created_at, -7)), ...(s.scheme === 'childcare-voucher' ? voucherPool('grant') : [])] : [])
+      : s.scheme === 'tax-free-childcare' ? tfcPool(refs)
+        : voucherPool(voucherKey(s.provider));
+    return { pool, exactFrom: named?.length ? named : pool, after: addDays(p.created_at, -7), before: addDays(p.created_at, s.scheme === 'tax-free-childcare' ? 45 : 90) };
+  };
+  const nsiOrVoucher = (p, s) => s.scheme !== 'card' && toDay(p.created_at) >= addDays(from, -60) && pounds(s.amount - (s.refunded || 0)) > 0;
+  // First pass: a credit of exactly a booking's amount goes to that booking, before any sharing out
+  const exactClaim = new Map();
+  for (const { p, s } of allSubs) {
+    if (!nsiOrVoucher(p, s)) continue;
+    const net = pounds(s.amount - (s.refunded || 0));
+    const w = poolFor(p, s, net);
+    const c = w.exactFrom.find(x => x.left > 0.004 && same(x.left, net) && x.date >= w.after && x.date <= w.before);
+    if (c) { c.left = 0; exactClaim.set(s, c); }
+  }
   for (const { p, s } of allSubs) {
     const net = pounds(s.amount - (s.refunded || 0));
     const r = { ...s, reference: p.reference, net, state: 'awaiting', covered: 0, credits: [], payout: null };
@@ -277,13 +297,9 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
         else r.state = 'paidout';
       }
     } else if (toDay(p.created_at) >= addDays(from, -60)) {
-      const refs = tfcRefs(s.childRef);
-      const stems = refStems(p.children);
-      const named = viaNsi(s) && stems.length ? stemPool(stems) : null;   // credits carrying the child's letters come first
-      const pool = viaNsi(s) ? (p.completed_at ? [...(stems.length ? stemPool(stems) : []), ...exactTfc(net, addDays(p.created_at, -7)), ...(s.scheme === 'childcare-voucher' ? voucherPool('grant') : [])] : [])
-        : s.scheme === 'tax-free-childcare' ? tfcPool(refs)
-          : voucherPool(voucherKey(s.provider));
-      const t = take(pool, net, addDays(p.created_at, -7), addDays(p.created_at, s.scheme === 'tax-free-childcare' ? 45 : 90), named?.length ? named : pool);
+      const w = poolFor(p, s, net);
+      const t = exactClaim.has(s) ? { covered: net, used: [{ credit: exactClaim.get(s), amount: net }] }
+        : take(w.pool, net, w.after, w.before, w.exactFrom);
       // Hounslow Tax-Free Childcare / vouchers that went to the previous owner arrive in bulk from MRYJ Ltd
       if (t.covered < net - 0.01 && p.site === 'hounslow') {
         const f = take(credits.filter(c => c.kind === 'forwarded'), pounds(net - t.covered), addDays(p.created_at, -7));
