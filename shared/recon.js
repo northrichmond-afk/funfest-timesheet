@@ -112,10 +112,13 @@ const bankVoucherKey = d => (VOUCHER_PROVIDERS.find(([, , re]) => re.test(d || '
 export function refStems(names) {
   const out = new Set();
   for (const n of String(names || '').split(/[,;&]| and /i)) {
-    const w = n.trim().toUpperCase().replace(/[^A-Z\s-]/g, '').split(/[\s-]+/).filter(Boolean);
+    const w = n.trim().toUpperCase().replace(/[^A-Z\s-]/g, '').split(/\s+/).filter(Boolean);
     if (w.length < 2) continue;
-    const sur = w.at(-1).slice(0, 3);
-    if (sur.length === 3) out.add(w[0][0] + sur);
+    // a double-barrelled surname (Fouqueau-Zeller) may use either part: LFOU or LZEL
+    for (const part of w.at(-1).split('-').filter(Boolean)) {
+      const sur = part.slice(0, 3);
+      if (sur.length === 3) out.add(w[0][0] + sur);
+    }
   }
   return [...out];
 }
@@ -234,6 +237,9 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
     pinned.set(`${o.site}|${o.order_id}`, cs);
   }
   const isPinned = p => pinned.has(`${p.site}|${p.order_id}`);
+  // PonchoPay sometimes has first names only ("Charlotte, Liliana"): add the website order's names
+  const orderKids = new Map(orders.map(o => [`${o.site}|${o.order_id}`, o.children]));
+  const kidsOf = p => [p.children, orderKids.get(`${p.site}|${p.order_id}`)].filter(Boolean).join(', ');
   const bankTo = bank.reduce((m, t) => (t.date > m ? t.date : m), '');
   const bankFrom = bank.reduce((m, t) => (!m || t.date < m ? t.date : m), '');
 
@@ -280,7 +286,7 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
   // up for grabs by another family's booking just because the amount is the same
   const knownStems = new Set(payments.flatMap(p => [
     ...(p.subsidies || []).flatMap(s => tfcRefs(s.childRef).map(r => r.slice(0, 4))),
-    ...refStems(p.children),
+    ...refStems(kidsOf(p)),
   ]));
   const creditStem = c => (c.description.toUpperCase().match(/\b([A-Z]{4})\d{5}\b/) || [])[1];
   const exactTfc = (amount, after, own = []) => credits.filter(c => c.kind === 'tfc' && c.left > 0.004 && same(c.left, amount) && c.date >= after
@@ -293,7 +299,7 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
   // Where each Tax-Free Childcare / voucher booking may find its money
   const poolFor = (p, s, net) => {
     const refs = tfcRefs(s.childRef);
-    const stems = refStems(p.children);
+    const stems = refStems(kidsOf(p));
     const named = viaNsi(s) && stems.length ? stemPool(stems) : null;   // credits carrying the child's letters come first
     const pool = viaNsi(s) ? (p.completed_at ? [...(named || []), ...exactTfc(net, addDays(p.created_at, -7), stems), ...(s.scheme === 'childcare-voucher' ? voucherPool('grant') : [])] : [])
       : s.scheme === 'tax-free-childcare' ? tfcPool(refs)

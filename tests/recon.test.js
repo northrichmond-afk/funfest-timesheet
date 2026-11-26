@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseHsbcCsv, mergeBank, bankKind, hsbcDate, compactPonchoPayment, compactPonchoPayout, compactOrder, reconcile } from '../shared/recon.js';
+import { parseHsbcCsv, mergeBank, bankKind, hsbcDate, compactPonchoPayment, compactPonchoPayout, compactOrder, reconcile, refStems } from '../shared/recon.js';
 
 // Made-up data in the two HSBC layouts
 const STATEMENT = `Date,Type,Description,Paid Out,Paid In,Balance
@@ -279,4 +279,20 @@ test('reconcile: bank payments linked by hand go to that order only', () => {
   assert.equal(row(2199).received, 172);
   assert.equal(row(2199).link.text, 'Computershare 18 Jun');
   assert.equal(row(2519).status, 'paid');
+});
+
+test('refStems: a double-barrelled surname gives both stems', () => {
+  assert.deepEqual(refStems('Leon Fouqueau-Zeller').sort(), ['LFOU', 'LZEL']);
+});
+
+test('reconcile: first names only on PonchoPay, surname from the order', () => {
+  const bank = parseHsbcCsv(`Date,Type,Description,Paid Out,Paid In,Balance
+25 Aug 2026,CR,"NATIONAL SAVINGS A CDOY96443",,124.00,
+25 Aug 2026,CR,"NATIONAL SAVINGS A LDOY54443",,124.00,`, 's');
+  const pay = compactPonchoPayment({ uuid: 'd', reference: 'PP-d', amount: 24800, createdDate: '2026-08-23T19:00:00Z', completedDate: '2026-09-10T20:00:00Z', children: [{ name: 'Charlotte ' }, { name: 'Liliana ' }],
+    integration: { metadata: '2791', location: 'https://fun-fest.co.uk/northrichmond' },
+    subsidies: [{ scheme: 'tax-free-childcare', amount: 24800, refunds: [], payments: [], childReferenceCode: '' }] });
+  const o = { site: 'northrichmond', order_id: 2791, number: '2791', status: 'completed', created_at: '2026-08-23T19:00:00Z', total: 248, refunded: 0, children: 'charlotte doyle , Liliana  doyle ' };
+  const r = reconcile({ orders: [o], payments: [pay], bank }, { today: '2026-11-26' });
+  assert.equal(r.rows[0].status, 'paid');
 });
