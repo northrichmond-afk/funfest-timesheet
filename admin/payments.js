@@ -7,7 +7,7 @@
 import { sb } from '../shared/supabase.js';
 import { esc, toast, download } from '../shared/ui.js';
 import { toCSV } from '../shared/hours.js';
-import { SITES, STATUS, reconcile, parseHsbcCsv, mergeBank, compactPonchoPayment, compactPonchoPayout } from '../shared/recon.js';
+import { SITES, STATUS, csvRow, reconcile, parseHsbcCsv, mergeBank, compactPonchoPayment, compactPonchoPayout } from '../shared/recon.js';
 import { conn, CLUBS } from './invoice.js';
 
 const ADMIN_ORIGIN = location.origin;
@@ -22,6 +22,36 @@ const addDays = (iso, n) => { const d = new Date(String(iso).slice(0, 10) + 'T12
 const SCHEME = { card: 'Card', 'tax-free-childcare': 'Tax-Free Childcare', 'childcare-voucher': 'Voucher' };
 
 const filter = { site: '', status: 'problems', q: '' };
+
+// A PonchoPay payments export (CSV) to check against the bank: kept in this browser
+const PP_EXPORT_KEY = 'ff-pp-export';
+const loadExport = () => { try { return JSON.parse(localStorage.getItem(PP_EXPORT_KEY) || 'null'); } catch { return null; } };
+function parsePonchoExport(text, name) {
+  const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter(l => l.trim());
+  const head = csvRow(lines[0] || '').map(h => h.trim().toLowerCase());
+  const ix = k => head.indexOf(k);
+  if (ix('reference') < 0) throw new Error('That file has no "reference" column: use PonchoPay’s payments export.');
+  const payments = lines.slice(1).map(csvRow).map(c => ({
+    reference: c[ix('reference')], email: c[ix('user')] || '', amount: +c[ix('amount')] || 0, location: c[ix('location')] || '',
+    created: (c[ix('created_date')] || '').slice(0, 10), method: c[ix('payment_method')] || '', inBank: c[ix('in_bank_date')] || '',
+  })).filter(p => /^PP-/.test(p.reference || ''));
+  return { name, at: new Date().toISOString(), payments };
+}
+// Is each exported payment in the bank, going by the reconciliation?
+function checkExport(exp, res) {
+  const subsByRef = new Map(); const rowByRef = new Map();
+  for (const r of res.rows) for (const s of r.subs) {
+    if (!s.reference) continue;
+    subsByRef.set(s.reference, [...(subsByRef.get(s.reference) || []), s]); rowByRef.set(s.reference, r);
+  }
+  return exp.payments.map(p => {
+    const subs = subsByRef.get(p.reference);
+    const row = rowByRef.get(p.reference);
+    const inBank = !!subs && subs.every(s => s.state === 'received' || s.state === 'refunded');
+    const credit = subs?.flatMap(s => s.credits || [])[0]?.credit;
+    return { ...p, row, found: !!row, inBank, bankDate: credit?.date || null };
+  });
+}
 let ctxRef = null;
 
 // ── Remembered bank folder (IndexedDB) ────────────────────────
@@ -196,9 +226,14 @@ function render(view, settings, data, res) {
   const c = conn();
   const counts = {}; for (const r of res.rows) counts[r.status] = (counts[r.status] || 0) + 1;
   const problems = r => ['missing', 'part'].includes(r.status);
+  const exp = loadExport();
+  const expCheck = exp ? checkExport(exp, res) : [];
+  const notInBankRefs = new Set(expCheck.filter(x => x.found && !x.inBank).map(x => x.reference));
+  const hl = r => r.subs.some(s => notInBankRefs.has(s.reference));
+  const expOutside = expCheck.filter(x => !x.found);
   const q = filter.q.trim().toLowerCase();
   const rows = res.rows.filter(r => (!filter.site || r.order.site === filter.site)
-    && (filter.status === 'all' ? true : filter.status === 'problems' ? problems(r) : filter.status === 'paid' ? ['paid', 'staff'].includes(r.status) : r.status === filter.status)
+    && (filter.status === 'all' ? true : filter.status === 'problems' ? problems(r) : filter.status === 'export' ? hl(r) : filter.status === 'paid' ? ['paid', 'staff'].includes(r.status) : r.status === filter.status)
     && (!q || [r.order.number, r.order.parent, r.order.email, r.order.children, ...r.payments.map(p => p.reference)].join(' ').toLowerCase().includes(q)));
   const stale = d => !d || (Date.now() - new Date(d)) > 2 * 86400000;
   const orderLink = o => `${CLUBS[o.site]?.base || ''}/wp-admin/admin.php?page=wc-orders&action=edit&id=${o.order_id}`;
@@ -215,6 +250,7 @@ function render(view, settings, data, res) {
   ].join('');
   const statusPill = r => `<span class="pill ${STATUS[r.status].cls}">${STATUS[r.status].label}</span>${r.override?.note ? `<div class="small muted">${esc(r.override.note)}</div>` : ''}`;
   const FILTERS = [['problems', `Missing / part paid (${(counts.missing || 0) + (counts.part || 0)})`], ['pending', `Waiting (${counts.pending || 0})`], ['transit', `In transit (${counts.transit || 0})`],
+    ...(exp ? [['export', `⚠️ Not in bank, from export (${res.rows.filter(hl).length})`]] : []),
     ['paid', `Paid (${(counts.paid || 0) + (counts.staff || 0)})`], ['manual', `Marked paid (${counts.manual || 0})`], ['all', `All (${res.rows.length})`]];
 
   view.innerHTML = `
@@ -232,11 +268,17 @@ function render(view, settings, data, res) {
         <label>Club<select id="pmSite"><option value="">Both</option>${Object.entries(SITES).map(([k, l]) => `<option value="${k}" ${filter.site === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         <label>Search<input id="pmQ" value="${esc(filter.q)}" placeholder="order, PP- ref, parent, child"></label>
         <button id="pmCsv">⬇️ CSV</button>
+        <button id="pmExp" title="Upload a PonchoPay payments export to see which of its payments aren’t in the bank">📄 Check PonchoPay export</button>
+        <input type="file" id="pmExpFile" accept=".csv,text/csv" hidden>
       </div>
+      ${exp ? `<div class="msg warn small">PonchoPay export <b>${esc(exp.name)}</b> (${expCheck.length} payments): <b>${expCheck.filter(x => x.inBank).length}</b> found in the bank,
+        <b>${notInBankRefs.size}</b> not in the bank (highlighted below)${expOutside.length ? `, ${expOutside.length} not in this list (before ${fmtD(settings.start_date)} or no order)` : ''}.
+        <button class="small" id="pmExpShow">Show not in bank</button> <button class="small" id="pmExpClear">Clear</button>
+        ${expOutside.length ? `<details><summary>Not in this list (${expOutside.length})</summary>${expOutside.map(x => `${esc(x.reference)} · ${esc(x.location)} · ${fmtD(x.created)} · ${gbp(x.amount)} · ${esc(x.method)} · ${esc(x.email)}`).join('<br>')}</details>` : ''}</div>` : ''}
       <div class="subtabs">${FILTERS.map(([k, l]) => `<button data-pf="${k}" class="${filter.status === k ? 'active' : ''}">${l}</button>`).join('')}</div>
       ${rows.length ? `<div class="table-wrap"><table>
         <tr><th>Order</th><th>Date</th><th>Parent / child</th><th>Email</th><th>Due</th><th>Received</th><th>Paid by</th><th>Status</th><th></th></tr>
-        ${rows.slice(0, 500).map(r => `<tr>
+        ${rows.slice(0, 500).map(r => `<tr${hl(r) ? ' class="hl-export" title="In the PonchoPay export, not found in the bank"' : ''}>
           <td><a href="${esc(orderLink(r.order))}" target="_blank" rel="noopener">#${esc(r.order.number)}</a><div class="small muted">${esc(SITES[r.order.site] || r.order.site)}</div></td>
           <td class="small" style="white-space:nowrap">${fmtD(r.order.created_at)}</td>
           <td class="small">${esc(r.order.parent || '')}${r.order.children ? `<div class="muted">${esc(r.order.children)}</div>` : ''}</td>
@@ -302,6 +344,18 @@ function render(view, settings, data, res) {
   };
   $('pmBm').href = bookmarklet();
   $('pmBm').onclick = (e) => { e.preventDefault(); toast('Drag this button onto your bookmarks bar, then click it while PonchoPay is open.', 6000); };
+  $('pmExp').onclick = () => $('pmExpFile').click();
+  $('pmExpFile').onchange = async e => {
+    const f = e.target.files[0]; if (!f) return;
+    try {
+      const x = parsePonchoExport(await f.text(), f.name);
+      if (!x.payments.length) throw new Error('No PonchoPay payments (PP-…) in that file.');
+      localStorage.setItem(PP_EXPORT_KEY, JSON.stringify(x));
+      filter.status = 'export'; render(view, settings, data, res);
+    } catch (err) { toast(err.message); }
+  };
+  $('pmExpShow')?.addEventListener('click', () => { filter.status = 'export'; render(view, settings, data, res); });
+  $('pmExpClear')?.addEventListener('click', () => { localStorage.removeItem(PP_EXPORT_KEY); if (filter.status === 'export') filter.status = 'problems'; render(view, settings, data, res); });
   $('pmCsv').onclick = () => download(`funfest-payments-${new Date().toISOString().slice(0, 10)}.csv`, toCSV([
     ['Club', 'Order', 'PonchoPay reference', 'Order date', 'WooCommerce status', 'Parent', 'Email', 'Children', 'Due', 'Received', 'In transit', 'Card fees', 'Status', 'Paid by', 'Note'],
     ...rows.map(r => [SITES[r.order.site], r.order.number, r.payments.map(p => p.reference).join(', '), String(r.order.created_at).slice(0, 10), r.order.status, r.order.parent, r.order.email, r.order.children,
