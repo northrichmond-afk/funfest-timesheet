@@ -13,6 +13,7 @@ import { remindersForm } from './reminders.js';
 import { tabPayments, listenForPonchoPay } from './payments.js';
 import { gmailToken, sendGmail, isEmail } from './gmail.js';
 import { importCard } from './staffimport.js';
+import { tabInfo } from './info.js';
 
 const view = document.getElementById('view');
 const dlg = document.getElementById('dlg');
@@ -101,7 +102,7 @@ function go(tab) {
   document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   view.innerHTML = '<p class="center muted">Loading…</p>';
   ({ today: tabToday, rota: tabRota, entries: tabEntries, requests: tabRequests, reports: tabReports,
-     staff: tabStaff, forms: () => tabForms({ view, dlg, me: state.me, staff: state.staff, staffName }), sites: tabSites, settings: tabSettings, invoices: () => tabAdmin(view, dlg), payments: () => tabPayments({ view, dlg, me: state.me }), admin: () => go('invoices') }[tab] || tabToday)();
+     staff: tabStaff, forms: () => tabForms({ view, dlg, me: state.me, staff: state.staff, staffName }), sites: tabSites, settings: tabSettings, invoices: () => tabAdmin(view, dlg), payments: () => tabPayments({ view, dlg, me: state.me }), info: () => tabInfo(view), admin: () => go('invoices') }[tab] || tabToday)();
 }
 
 // ── Today ────────────────────────────────────────────────────
