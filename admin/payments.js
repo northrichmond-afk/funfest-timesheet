@@ -21,7 +21,17 @@ const gbp = v => '£' + Number(v || 0).toLocaleString('en-GB', { minimumFraction
 const addDays = (iso, n) => { const d = new Date(String(iso).slice(0, 10) + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const SCHEME = { card: 'Card', 'tax-free-childcare': 'Tax-Free Childcare', 'childcare-voucher': 'Voucher' };
 
-const filter = { site: '', status: 'problems', q: '' };
+const filter = { site: '', status: 'problems', q: '', bank: '' };
+
+// Bank search: plain text matches anywhere ("WIG" finds "NATIONAL SAVINGS A SWIG97510");
+// * = any characters, ? = one character; a number also matches the amount
+export function bankMatcher(q) {
+  q = String(q || '').trim();
+  if (!q) return null;
+  const re = new RegExp(q.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.'), 'i');
+  const num = /^£?-?\d+(\.\d{1,2})?$/.test(q) ? Math.abs(+q.replace('£', '')) : null;
+  return t => re.test(t.description || '') || re.test(t.date || '') || (num != null && Math.abs(Math.abs(t.amount) - num) < 0.005);
+}
 
 // A PonchoPay payments export (CSV) to check against the bank: kept in this browser
 const PP_EXPORT_KEY = 'ff-pp-export';
@@ -249,6 +259,25 @@ function render(view, settings, data, res) {
     ...(r.payments.length || r.direct.length ? [] : [`<span class="muted">${esc(r.order.payment_title || 'No payment found')}</span>`]),
   ].join('');
   const statusPill = r => `<span class="pill ${STATUS[r.status].cls}">${STATUS[r.status].label}</span>${r.override?.note ? `<div class="small muted">${esc(r.override.note)}</div>` : ''}`;
+  const usedBy = new Map();   // bank credit → the bookings it paid
+  for (const r of res.rows) {
+    const label = `${SITES[r.order.site] || r.order.site} #${r.order.number}`;
+    for (const s of r.subs) for (const c of [...(s.credits || []).map(u => u.credit), s.payout?.bank].filter(Boolean)) usedBy.set(c.id, [...new Set([...(usedBy.get(c.id) || []), label])]);
+    for (const u of r.direct) usedBy.set(u.credit.id, [...new Set([...(usedBy.get(u.credit.id) || []), label])]);
+  }
+  function bankResults(q) {
+    const m = bankMatcher(q);
+    if (!m) return '';
+    const hits = data.bank.filter(m).sort((a, b) => b.date.localeCompare(a.date));
+    if (!hits.length) return '<p class="muted">No bank transactions match.</p>';
+    const total = hits.reduce((a, t) => a + t.amount, 0);
+    return `<p class="small"><b>${hits.length}</b> transaction${hits.length === 1 ? '' : 's'} · total ${gbp(total)}</p>
+      <div class="table-wrap"><table><tr><th>Date</th><th>Description</th><th>Amount</th><th>Matched to</th></tr>
+      ${hits.slice(0, 300).map(t => `<tr><td class="small" style="white-space:nowrap">${fmtD(t.date)}</td><td class="small">${esc(t.description)}</td>
+        <td style="white-space:nowrap${t.amount < 0 ? ';color:#be123c' : ''}">${gbp(t.amount)}</td>
+        <td class="small">${(usedBy.get(t.id) || []).map(esc).join(', ') || (t.amount > 0 ? '<span class="muted">not matched</span>' : '')}</td></tr>`).join('')}
+      </table></div>${hits.length > 300 ? '<p class="small muted">Showing the latest 300.</p>' : ''}`;
+  }
   const FILTERS = [['problems', `Missing / part paid (${(counts.missing || 0) + (counts.part || 0)})`], ['pending', `Waiting (${counts.pending || 0})`], ['transit', `In transit (${counts.transit || 0})`],
     ...(exp ? [['export', `⚠️ Not in bank, from export (${res.rows.filter(hl).length})`]] : []),
     ['paid', `Paid (${(counts.paid || 0) + (counts.staff || 0)})`], ['manual', `Marked paid (${counts.manual || 0})`], ['all', `All (${res.rows.length})`]];
@@ -294,6 +323,15 @@ function render(view, settings, data, res) {
       : `<p>${filter.status === 'problems' ? '✅ Nothing missing.' : 'No orders here.'}</p>`}
       <p class="small muted">${STATUS.missing.label} = no payment found ${settings.grace_days} days after the order. Bank statements loaded: ${res.bankFrom ? `${fmtD(res.bankFrom)} to ${fmtD(res.bankTo)}` : 'none'}.
         Card payments go to the bank in PonchoPay’s daily payouts; Tax-Free Childcare and vouchers are paid to the bank directly (Hounslow’s also via MRYJ Ltd).</p>
+    </div>
+
+    <div class="card">
+      <h2>Bank transactions</h2>
+      <div class="toolbar">
+        <label>Search<input id="pmBankQ" value="${esc(filter.bank)}" placeholder="e.g. WIG, SWIG*, NATIONAL*HUT, 40.00"></label>
+      </div>
+      <div id="pmBankRes">${bankResults(filter.bank)}</div>
+      <p class="small muted">Text matches anywhere in the description. <b>*</b> = any characters, <b>?</b> = one character. A number also matches the amount.</p>
     </div>
 
     ${res.unmatchedBank.length || res.unmatchedPayments.length ? `<div class="card">
@@ -356,6 +394,8 @@ function render(view, settings, data, res) {
   };
   $('pmExpShow')?.addEventListener('click', () => { filter.status = 'export'; render(view, settings, data, res); });
   $('pmExpClear')?.addEventListener('click', () => { localStorage.removeItem(PP_EXPORT_KEY); if (filter.status === 'export') filter.status = 'problems'; render(view, settings, data, res); });
+  let bankTimer;
+  $('pmBankQ').oninput = () => { clearTimeout(bankTimer); bankTimer = setTimeout(() => { filter.bank = $('pmBankQ').value; $('pmBankRes').innerHTML = bankResults(filter.bank); }, 200); };
   $('pmCsv').onclick = () => download(`funfest-payments-${new Date().toISOString().slice(0, 10)}.csv`, toCSV([
     ['Club', 'Order', 'PonchoPay reference', 'Order date', 'WooCommerce status', 'Parent', 'Email', 'Children', 'Due', 'Received', 'In transit', 'Card fees', 'Status', 'Paid by', 'Note'],
     ...rows.map(r => [SITES[r.order.site], r.order.number, r.payments.map(p => p.reference).join(', '), String(r.order.created_at).slice(0, 10), r.order.status, r.order.parent, r.order.email, r.order.children,

@@ -436,5 +436,5 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
     missingAmount: sum(due.filter(r => r.status === 'missing' || r.status === 'part'), r => r.due - r.received - r.transit),
     pending: due.filter(r => r.status === 'pending').length,
   };
-  return { rows, payouts: po, unmatchedBank, otherCredits, unmatchedPayments, bankFrom, bankTo, totals };
+  return { rows, credits, payouts: po, unmatchedBank, otherCredits, unmatchedPayments, bankFrom, bankTo, totals };
 }
