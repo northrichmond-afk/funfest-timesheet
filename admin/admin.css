@@ -23,3 +23,6 @@ main { max-width: 1400px; }
 @media print { .subtabs { display: none !important; } }
 button.stat { border: 1px solid var(--line); font: inherit; color: inherit; }
 button.stat.active { border-color: var(--pink); box-shadow: 0 0 0 2px var(--pink) inset; }
+
+.daynav { display: flex; align-items: center; gap: .3rem; }
+.daynav button { padding: .35rem .7rem; font-size: 1.1rem; line-height: 1; }

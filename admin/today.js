@@ -266,7 +266,8 @@ export async function attendancePane(box, ctx, force = false) {
     <div class="card">
       <div class="toolbar">
         <label>Club<select id="rgClub">${CLUB_OPTIONS.map(([k, l]) => `<option value="${k}" ${reg.club === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-        <label>Day<input type="date" id="rgDay" value="${reg.day}"></label>
+        <label>Day<span class="daynav"><button type="button" id="rgPrev" title="Previous day" aria-label="Previous day">‹</button><input type="date" id="rgDay" value="${reg.day}"><button type="button" id="rgNext" title="Next day" aria-label="Next day">›</button></span></label>
+        ${reg.day !== isoDay() ? '<button type="button" id="rgToday">Today</button>' : ''}
         <button id="rgReload">↻ Refresh bookings</button>
       </div>
       <div id="rgBody"><p class="muted">Loading bookings from the website…</p></div>
@@ -274,6 +275,10 @@ export async function attendancePane(box, ctx, force = false) {
   box.innerHTML = head;
   box.querySelector('#rgClub').onchange = (e) => { reg.club = e.target.value; attendancePane(box, ctx); };
   box.querySelector('#rgDay').onchange = (e) => { reg.day = e.target.value || isoDay(); attendancePane(box, ctx); };
+  const step = n => { const [y, m, d] = reg.day.split('-').map(Number); reg.day = isoDay(new Date(y, m - 1, d + n)); attendancePane(box, ctx); };
+  box.querySelector('#rgPrev').onclick = () => step(-1);
+  box.querySelector('#rgNext').onclick = () => step(1);
+  box.querySelector('#rgToday')?.addEventListener('click', () => { reg.day = isoDay(); attendancePane(box, ctx); });
   box.querySelector('#rgReload').onclick = () => attendancePane(box, ctx, true);
   const body = box.querySelector('#rgBody');
   const c = conn();

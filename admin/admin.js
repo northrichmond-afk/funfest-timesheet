@@ -80,7 +80,7 @@ async function boot() {
     listenForPonchoPay(() => go('payments'));
     return go('payments');
   }
-  go(location.hash.slice(1) || 'today');
+  go('today');   // always start on Today › Attending children
 }
 
 async function loadRef() {
@@ -108,7 +108,7 @@ function go(tab) {
 
 // ── Today (sub-tabs: Staff shifts, Attending children; accident forms are under Forms) ──
 const TODAY_TABS = [['shifts', 'Staff shifts'], ['children', 'Attending children']];
-let todayTab = 'shifts';
+let todayTab = 'children';   // Attending children opens first
 function todayTabsHTML() {
   return `<div class="subtabs">${TODAY_TABS.map(([k, l]) => `<button data-tt="${k}" class="${todayTab === k ? 'active' : ''}">${l}</button>`).join('')}</div>`;
 }
