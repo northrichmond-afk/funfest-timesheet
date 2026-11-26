@@ -212,11 +212,28 @@ export const STATUS = {
  * overrides [{ site, order_id, status, note }]. opts: { from: 'YYYY-MM-DD', graceDays: 14, today }.
  * Returns { rows, payouts, unmatchedBank, otherCredits, unmatchedPayments, bankFrom, bankTo, totals }.
  */
+// Bank payments an admin linked to an order by hand: an override with status 'linked' and
+// note = JSON { credits: [bank ids], text }. Those credits go to that order and nowhere else.
+export function linkInfo(o) {
+  if (o?.status !== 'linked') return null;
+  try { const j = JSON.parse(o.note || '{}'); return { credits: Array.isArray(j.credits) ? j.credits : [], text: j.text || '' }; }
+  catch { return { credits: [], text: '' }; }
+}
+
 export function reconcile({ orders = [], payments = [], payouts = [], bank = [], overrides = [] }, opts = {}) {
   const from = opts.from || '2026-01-01';
   const grace = opts.graceDays ?? 14;
   const today = opts.today || new Date().toISOString().slice(0, 10);
   const credits = bank.filter(t => t.amount > 0).map(t => ({ ...t, kind: bankKind(t), used: null, left: t.amount }));
+  const pinned = new Map();   // order key → credits linked to it by hand
+  for (const o of overrides) {
+    const li = linkInfo(o);
+    if (!li) continue;
+    const cs = li.credits.map(id => credits.find(c => c.id === id)).filter(Boolean);
+    for (const c of cs) { c.left = 0; c.used = { type: 'linked', ref: `${SITES[o.site] || o.site} #${o.order_id}` }; }
+    pinned.set(`${o.site}|${o.order_id}`, cs);
+  }
+  const isPinned = p => pinned.has(`${p.site}|${p.order_id}`);
   const bankTo = bank.reduce((m, t) => (t.date > m ? t.date : m), '');
   const bankFrom = bank.reduce((m, t) => (!m || t.date < m ? t.date : m), '');
 
@@ -287,7 +304,7 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
   // First pass: a credit of exactly a booking's amount goes to that booking, before any sharing out
   const exactClaim = new Map();
   for (const { p, s } of allSubs) {
-    if (!nsiOrVoucher(p, s)) continue;
+    if (!nsiOrVoucher(p, s) || isPinned(p)) continue;
     const net = pounds(s.amount - (s.refunded || 0));
     const w = poolFor(p, s, net);
     const c = w.exactFrom.find(x => x.left > 0.004 && same(x.left, net) && x.date >= w.after && x.date <= w.before);
@@ -300,7 +317,7 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
   for (const o of [...orders].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))) {
     const k = `${o.site}|${o.order_id}`;
     const due = pounds(o.total - (o.refunded || 0));
-    if (paidVia.has(k) || o.previous_booking || due <= 0 || NOT_DUE.has(o.status) || ['refunded', 'staff-member'].includes(o.status) || toDay(o.created_at) < from) continue;
+    if (paidVia.has(k) || pinned.has(k) || o.previous_booking || due <= 0 || NOT_DUE.has(o.status) || ['refunded', 'staff-member'].includes(o.status) || toDay(o.created_at) < from) continue;
     const stems = refStems(o.children);
     if (!stems.length) continue;
     const c = stemPool(stems).find(x => x.left > 0.004 && same(x.left, due) && x.date >= addDays(o.created_at, -7) && x.date <= addDays(o.created_at, 45));
@@ -318,6 +335,8 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
         if (payout.bank) { r.state = 'received'; r.covered = net; r.credits = [{ credit: payout.bank, amount: net }]; }
         else r.state = 'paidout';
       }
+    } else if (isPinned(p)) {
+      // the admin linked this order's bank payments by hand: leave the automatic matching out of it
     } else if (toDay(p.created_at) >= addDays(from, -60)) {
       const w = poolFor(p, s, net);
       const t = exactClaim.has(s) ? { covered: net, used: [{ credit: exactClaim.get(s), amount: net }] }
@@ -389,13 +408,14 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
     const transit = pounds(subs.filter(s => s.state === 'paidout').reduce((a, s) => a + s.net - (s.covered || 0), 0));
     const fees = pounds(subs.reduce((a, s) => a + (s.fee || 0), 0));
     const direct = [];
+    for (const c of pinned.get(k) || []) { direct.push({ credit: c, amount: c.amount, linked: true }); received = pounds(received + c.amount); }
     if (directTfc.has(k)) {
       const c = directTfc.get(k);
       c.used = { type: 'tax-free-childcare', ref: `${SITES[o.site] || o.site} #${o.number}` };
       direct.push({ credit: c, amount: due }); received = pounds(received + due);
     }
     // the parent's own bank transfer: the order number in the reference, or the surname and the exact amount
-    if (due > 0 && received < due - 0.01 && !NOT_DUE.has(o.status)) {
+    if (due > 0 && received < due - 0.01 && !NOT_DUE.has(o.status) && !pinned.has(k)) {
       const numRe = new RegExp(`(^|\\D)${String(o.number).replace(/\D/g, '')}(\\D|$)`);
       const surname = String(o.parent || '').trim().split(/\s+/).at(-1)?.toUpperCase() || '';
       const window = c => c.date >= addDays(o.created_at, -7) && c.date <= addDays(o.created_at, 60) && c.left > 0.004;
@@ -417,7 +437,7 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
     else if (received + transit >= due - 0.01) status = 'transit';
     else if (received > 0) status = 'part';
     else status = age > grace ? 'missing' : 'pending';
-    rows.push({ order: o, due, received, transit, fees, payments: linked, subs, direct, status, override, age, from: carried.get(k) || [] });
+    rows.push({ order: o, due, received, transit, fees, payments: linked, subs, direct, status, override, link: linkInfo(override), age, from: carried.get(k) || [] });
   }
 
   // PonchoPay / Tax-Free Childcare / voucher credits not tied to an order, and other money in

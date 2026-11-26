@@ -255,10 +255,10 @@ function render(view, settings, data, res) {
       return `<div><span class="pill ${s.state === 'received' ? 'ok' : s.state === 'refunded' ? 'muted' : s.state === 'paidout' ? 'info' : 'warn'}">${esc(SCHEME[s.scheme] || s.scheme)} ${gbp(s.net)}</span> <b>${esc(s.reference || '')}</b> <span class="muted">${esc(s.childRef || s.provider || '')}</span> ${how}</div>`;
     }),
     ...(r.from.length ? [`<div class="muted">Paid on the earlier booking ${r.from.map(o => '#' + esc(o.number)).join(', ')} (changed booking)</div>`] : []),
-    ...r.direct.map(u => `<div><span class="pill ok">Bank transfer ${gbp(u.amount)}</span> ${fmtD(u.credit.date)} <span class="muted">${esc(u.credit.description)}</span></div>`),
+    ...r.direct.map(u => `<div><span class="pill ok">${u.linked ? 'Linked by hand' : 'Bank transfer'} ${gbp(u.amount)}</span> ${fmtD(u.credit.date)} <span class="muted">${esc(u.credit.description)}</span></div>`),
     ...(r.payments.length || r.direct.length ? [] : [`<span class="muted">${esc(r.order.payment_title || 'No payment found')}</span>`]),
   ].join('');
-  const statusPill = r => `<span class="pill ${STATUS[r.status].cls}">${STATUS[r.status].label}</span>${r.override?.note ? `<div class="small muted">${esc(r.override.note)}</div>` : ''}`;
+  const statusPill = r => { const note = r.link ? r.link.text : r.override?.note; return `<span class="pill ${STATUS[r.status].cls}">${STATUS[r.status].label}</span>${r.link ? '<div class="small muted">🔗 bank linked by hand</div>' : ''}${note ? `<div class="small muted">${esc(note)}</div>` : ''}`; };
   const usedBy = new Map();   // bank credit → the bookings it paid
   for (const r of res.rows) {
     const label = `${SITES[r.order.site] || r.order.site} #${r.order.number}`;
@@ -316,8 +316,9 @@ function render(view, settings, data, res) {
           <td>${gbp(r.received)}</td>
           <td class="small">${paidBy(r)}</td>
           <td>${statusPill(r)}</td>
-          <td>${r.status === 'manual' ? `<button class="small" data-undo="${r.order.site}|${r.order.order_id}">Undo</button>`
-            : ['missing', 'part', 'pending', 'transit'].includes(r.status) ? `<button class="small" data-mark="${r.order.site}|${r.order.order_id}">Mark paid</button>` : ''}</td>
+          <td><div class="actions">${r.status === 'manual' ? `<button class="small" data-undo="${r.order.site}|${r.order.order_id}">Undo</button>`
+            : ['missing', 'part', 'pending', 'transit'].includes(r.status) && !r.link ? `<button class="small" data-mark="${r.order.site}|${r.order.order_id}">Mark paid</button>` : ''}
+            ${['staff', 'notdue'].includes(r.status) ? '' : `<button class="small" data-link="${r.order.site}|${r.order.order_id}" title="Choose the bank payments for this order">🔗 ${r.link ? 'Change link' : 'Link bank'}</button>`}</div></td>
         </tr>`).join('')}
       </table></div>${rows.length > 500 ? `<p class="small muted">Showing the first 500 of ${rows.length}: narrow the search, or download the CSV.</p>` : ''}`
       : `<p>${filter.status === 'problems' ? '✅ Nothing missing.' : 'No orders here.'}</p>`}
@@ -401,7 +402,7 @@ function render(view, settings, data, res) {
     ...rows.map(r => [SITES[r.order.site], r.order.number, r.payments.map(p => p.reference).join(', '), String(r.order.created_at).slice(0, 10), r.order.status, r.order.parent, r.order.email, r.order.children,
       r.due, r.received, r.transit, r.fees, STATUS[r.status].label,
       [...r.subs.map(s => `${SCHEME[s.scheme] || s.scheme} ${s.net} ${s.state}${s.payout ? ' ' + s.payout.reference : ''}${s.credits?.[0] ? ' bank ' + s.credits[0].credit.date : ''}`), ...r.direct.map(u => `bank transfer ${u.amount} ${u.credit.date}`)].join('; '),
-      r.override?.note || '']),
+      (r.link ? r.link.text : r.override?.note) || '']),
   ]));
   $('pmWp')?.addEventListener('click', async () => {
     const { error } = await sb.rpc('recon_set_wp_login', { p_user: c.user, p_pass: c.pass });
@@ -434,4 +435,63 @@ function render(view, settings, data, res) {
   };
   view.querySelectorAll('[data-mark]').forEach(b => b.onclick = () => mark(b.dataset.mark, false));
   view.querySelectorAll('[data-undo]').forEach(b => b.onclick = () => mark(b.dataset.undo, true));
+  view.querySelectorAll('[data-link]').forEach(b => b.onclick = () => linkDialog(b.dataset.link));
+
+  // Link bank payments to an order by hand (replaces the automatic matching for that order)
+  function linkDialog(key) {
+    const dlg = ctxRef.dlg;
+    const r = res.rows.find(x => `${x.order.site}|${x.order.order_id}` === key);
+    if (!dlg || !r) return;
+    const label = `${SITES[r.order.site] || r.order.site} #${r.order.number}`;
+    const chosen = new Set(r.link?.credits || []);
+    const surname = String(r.order.parent || '').trim().split(/\s+/).at(-1) || '';
+    const list = q => {
+      const m = bankMatcher(q);
+      const hits = data.bank.filter(t => t.amount > 0 && (chosen.has(t.id) || !m || m(t))).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 150);
+      return hits.length ? `<div class="table-wrap" style="max-height:320px;overflow:auto"><table>
+        ${hits.map(t => { const other = (usedBy.get(t.id) || []).filter(x => x !== label); return `<tr>
+          <td><input type="checkbox" data-cid="${esc(t.id)}" ${chosen.has(t.id) ? 'checked' : ''}></td>
+          <td class="small" style="white-space:nowrap">${fmtD(t.date)}</td><td class="small">${esc(t.description)}</td><td>${gbp(t.amount)}</td>
+          <td class="small ${other.length ? 'bad' : 'muted'}">${other.length ? 'now matched to ' + other.map(esc).join(', ') : ''}</td></tr>`; }).join('')}
+      </table></div>` : '<p class="muted">No bank payments match.</p>';
+    };
+    const total = () => [...chosen].reduce((a, id) => a + (data.bank.find(t => t.id === id)?.amount || 0), 0);
+    dlg.innerHTML = `<form method="dialog" class="card" style="min-width:min(720px,92vw)">
+      <h2>🔗 Link bank payments to ${esc(label)}</h2>
+      <p class="small">${esc(r.order.parent || '')}${r.order.children ? ' · ' + esc(r.order.children) : ''} · due <b>${gbp(r.due)}</b> · ${fmtD(r.order.created_at)}</p>
+      <p class="small muted">The ticked payments count for this order only, and the automatic matching leaves this order alone.${r.override && !r.link ? ' This replaces its “Marked paid”.' : ''}</p>
+      <label>Search bank<input id="lkQ" value="${esc(surname)}" placeholder="e.g. COMP VOUCHER, SWIG*, 172"></label>
+      <div id="lkList">${list(surname)}</div>
+      <p>Ticked: <b id="lkTotal">${gbp(total())}</b> of ${gbp(r.due)} due</p>
+      <label>Note<input id="lkNote" value="${esc(r.link?.text || '')}" placeholder="e.g. Computershare remittance 18 Jun"></label>
+      <div class="actions">
+        <button value="save" class="primary" id="lkSave">Save</button>
+        ${r.link ? '<button value="unlink" id="lkUnlink">Remove link</button>' : ''}
+        <button value="cancel" formnovalidate>Cancel</button>
+      </div></form>`;
+    const wire = () => dlg.querySelectorAll('[data-cid]').forEach(c => c.onchange = () => {
+      if (c.checked) chosen.add(c.dataset.cid); else chosen.delete(c.dataset.cid);
+      dlg.querySelector('#lkTotal').textContent = gbp(total());
+    });
+    wire();
+    let t;
+    dlg.querySelector('#lkQ').oninput = e => { clearTimeout(t); t = setTimeout(() => { dlg.querySelector('#lkList').innerHTML = list(e.target.value); wire(); }, 200); };
+    const [site, id] = key.split('|');
+    dlg.querySelector('#lkSave').onclick = async ev => {
+      ev.preventDefault();
+      const text = dlg.querySelector('#lkNote').value.trim();
+      const { error } = chosen.size
+        ? await sb.from('recon_overrides').upsert({ site, order_id: +id, status: 'linked', note: JSON.stringify({ credits: [...chosen], text }), set_by: ctxRef.me?.id || null, set_at: new Date().toISOString() }, { onConflict: 'site,order_id' })
+        : await sb.from('recon_overrides').delete().eq('site', site).eq('order_id', +id).eq('status', 'linked');
+      if (error) return toast(error.message);
+      dlg.close(); toast(chosen.size ? `Linked ${chosen.size} bank payment${chosen.size === 1 ? '' : 's'} to ${label}` : 'Link removed'); again();
+    };
+    dlg.querySelector('#lkUnlink')?.addEventListener('click', async ev => {
+      ev.preventDefault();
+      const { error } = await sb.from('recon_overrides').delete().eq('site', site).eq('order_id', +id).eq('status', 'linked');
+      if (error) return toast(error.message);
+      dlg.close(); toast('Link removed'); again();
+    });
+    dlg.showModal();
+  }
 }

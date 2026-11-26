@@ -257,3 +257,26 @@ test('reconcile: a booking paid straight from Tax-Free Childcare (no PonchoPay) 
   assert.equal(st[2727], 'paid');
   assert.equal(st[2616], 'missing');
 });
+
+test('reconcile: bank payments linked by hand go to that order only', () => {
+  const bank = parseHsbcCsv(`Date,Type,Description,Paid Out,Paid In,Balance
+18 Jun 2026,CR,COMP VOUCHER SERV,,408.00,
+23 Jun 2026,CR,COMP VOUCHER SERV,,172.00,`, 's');
+  const usui = compactPonchoPayment({ uuid: 'u', reference: 'PP-u', amount: 30400, createdDate: '2026-06-18T10:00:00Z', completedDate: '2026-06-18T10:00:00Z', children: [{ name: 'Lucca Usui-Duarte' }],
+    integration: { metadata: '2199', location: 'https://fun-fest.co.uk/northrichmond' },
+    subsidies: [{ scheme: 'childcare-voucher', amount: 30400, refunds: [], payments: [], voucherProvider: { name: 'Computershare' } }] });
+  const ord = (id, total) => ({ site: 'northrichmond', order_id: id, number: String(id), status: 'completed', created_at: '2026-06-15T09:00:00Z', total, refunded: 0 });
+  const id172 = bank.find(t => t.amount === 172).id, id408 = bank.find(t => t.amount === 408).id;
+  const before = reconcile({ orders: [ord(2199, 304)], payments: [usui], bank }, { today: '2026-11-26' });
+  assert.equal(before.rows[0].status, 'paid');            // the automatic matching takes the £408
+  const overrides = [
+    { site: 'northrichmond', order_id: 2199, status: 'linked', note: JSON.stringify({ credits: [id172], text: 'Computershare 18 Jun' }) },
+    { site: 'northrichmond', order_id: 2519, status: 'linked', note: JSON.stringify({ credits: [id408] }) },
+  ];
+  const r = reconcile({ orders: [ord(2199, 304), ord(2519, 192)], payments: [usui], bank, overrides }, { today: '2026-11-26' });
+  const row = id => r.rows.find(x => x.order.order_id === id);
+  assert.equal(row(2199).status, 'part');
+  assert.equal(row(2199).received, 172);
+  assert.equal(row(2199).link.text, 'Computershare 18 Jun');
+  assert.equal(row(2519).status, 'paid');
+});
