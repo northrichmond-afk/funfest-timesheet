@@ -229,6 +229,31 @@ export async function tabPayments(ctx) {
       for (const o of old || []) if (!orders.some(x => x.site === o.site && +x.order_id === +o.order_id)) orders.push(o);
       for (const p of oldPays || []) if (!payments.some(x => x.uuid === p.uuid)) payments.push(p);
     }
+    // changed bookings: load the earlier booking(s) they replaced (even before the start date), with their
+    // payments and the bank statements from then, so the payment carries over to the new order
+    const PAY_COLS = 'uuid,reference,site,order_id,email,children,amount,created_at,completed_at,subsidies';
+    for (let hop = 0; hop < 5; hop++) {
+      const have = new Set(orders.map(o => `${o.site}|${o.booking_id}`));
+      const missing = orders.filter(o => o.previous_booking && !have.has(`${o.site}|${o.previous_booking}`));
+      if (!missing.length) break;
+      let added = 0;
+      for (const site of new Set(missing.map(o => o.site))) {
+        const ids = [...new Set(missing.filter(o => o.site === site).map(o => o.previous_booking))];
+        const { data: old } = await sb.from('recon_orders').select('*').eq('site', site).in('booking_id', ids);
+        for (const o of old || []) if (!orders.some(x => x.site === o.site && +x.order_id === +o.order_id)) { orders.push(o); added++; }
+        const oldIds = (old || []).map(o => +o.order_id);
+        if (oldIds.length) {
+          const { data: oldPays } = await sb.from('pp_payments').select(PAY_COLS).eq('site', site).in('order_id', oldIds);
+          for (const p of oldPays || []) if (!payments.some(x => x.uuid === p.uuid)) payments.push(p);
+        }
+      }
+      if (!added) break;
+    }
+    const earliest = payments.reduce((m, p) => (String(p.created_at) < m ? String(p.created_at) : m), addDays(from, -10)).slice(0, 10);
+    if (earliest < addDays(from, -10)) {
+      const older = await selectAll('bank_tx', 'id,date,type,description,amount,source', q => q.gte('date', addDays(earliest, -10)).lt('date', addDays(from, -10)).order('date').order('id'));
+      bank.push(...older);
+    }
     data = { orders: orders.map(o => ({ ...o, total: +o.total, refunded: +o.refunded })), payments: payments.map(p => ({ ...p, amount: +p.amount })),
       payouts: payouts.map(p => ({ ...p, amount: +p.amount })), bank: bank.map(t => ({ ...t, amount: +t.amount })), overrides, wpSaved };
   } catch (e) { view.innerHTML = `<div class="card msg bad">${esc(e.message)}</div>`; return; }
