@@ -342,6 +342,9 @@ export async function openStaffDetails(dlg, s, ctx = {}) {
         ${row('Details last updated', p ? fmtDay(p.updated_at) : 'Not filled in yet')}
       </table>
 
+      <div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">Details from ${esc(s.name.split(' ')[0])}</h3><button id="editStaff">Edit</button></div>
+      <div id="det">${p ? detailsViewHTML(p) : '<p class="muted small">Not filled in yet. They can do this in the staff app under <b>My details</b>.</p>'}</div>
+
       <h3>Certificates uploaded in the app</h3>
       ${docRows ? `<div class="table-wrap"><table><tr><th>Document</th><th>Uploaded</th><th>iCloud</th><th></th></tr>${docRows}</table></div>` : '<p class="muted small">Nothing uploaded yet.</p>'}
       <details><summary class="small">Upload a document for ${esc(s.name)}</summary>
@@ -355,9 +358,6 @@ export async function openStaffDetails(dlg, s, ctx = {}) {
       <h3>Staff file in iCloud</h3>
       <div id="fold">${canPick() ? '<p class="small muted">Loading…</p>' : '<p class="small muted">Needs Chrome or Edge on the Mac.</p>'}</div>
       <label class="small">iCloud folder name (under Staff)<input id="foldName" value="${esc(p?.folder_name || '')}" placeholder="${esc(s.name)} (found automatically)"></label>
-
-      <div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">Details from ${esc(s.name.split(' ')[0])}</h3><button id="editStaff">Edit</button></div>
-      <div id="det">${p ? detailsViewHTML(p) : '<p class="muted small">Not filled in yet. They can do this in the staff app under <b>My details</b>.</p>'}</div>
 
       <div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">Office record: references, employment, safeguarding</h3><button id="editOffice">Edit</button></div>
       <p class="small muted" style="margin-top:.2rem">Only admins can see and change these.</p>
