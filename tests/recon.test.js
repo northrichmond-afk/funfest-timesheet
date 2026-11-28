@@ -327,3 +327,15 @@ test('reconcile: bank payments removed from the not-matched list', () => {
   assert.equal(b.unmatchedBank.length, 0);
   assert.equal(b.dismissedCredits.length, 1);
 });
+
+test('reconcile: a changed booking with a cancelled copy carries the payment to the live order', () => {
+  const pay = compactPonchoPayment({ uuid: 'h', reference: 'PP-h', amount: 7300, createdDate: '2025-08-11T08:41:00Z', completedDate: '2025-08-11T08:42:00Z', children: [{ name: 'Matilda Baker' }],
+    integration: { metadata: '1467', location: 'https://fun-fest.co.uk/northrichmond' },
+    subsidies: [{ scheme: 'card', amount: 7300, refunds: [], payments: [{ id: 'x1' }] }] });
+  const po = compactPonchoPayout({ id: 'po', reference: 'PO-1', amount: { value: 7100 }, bookingDate: '2025-08-13T18:00:00Z', payments: [{ id: 'x1' }] });
+  const bank = parseHsbcCsv(`Date,Type,Description,Paid Out,Paid In,Balance
+14 Aug 2025,CR,Poncho Care Limite PonchoPay payout,,71.00,`, 's');
+  const ord = (id, st, bk, prev, t) => ({ site: 'northrichmond', order_id: id, number: String(id), status: st, created_at: `2025-08-11T${t}:00Z`, total: 73, refunded: 0, booking_id: bk, previous_booking: prev });
+  const r = reconcile({ orders: [ord(1467, 'cancelled', 'A', null, '08:41'), ord(1469, 'cancelled', 'B', 'A', '11:46'), ord(1470, 'completed', 'B', 'A', '11:47')], payments: [pay], payouts: [po], bank }, { from: '2025-01-01', today: '2026-11-28' });
+  assert.equal(r.rows.find(x => x.order.order_id === 1470).status, 'paid');
+});

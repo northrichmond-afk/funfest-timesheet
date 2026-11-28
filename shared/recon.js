@@ -395,6 +395,7 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
   const carried = new Map();   // new order key → [old orders whose payments it took]
   const replaced = o => o.status === 'cancelled' || o.status === 'refunded' || o.status === 'failed' || o.status === 'trash';
   for (const o of [...orders].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))) {
+    if (replaced(o)) continue;   // a cancelled copy of the change doesn't take the payment (#1469 / #1470)
     let prev = o.previous_booking && byBooking.get(`${o.site}|${o.previous_booking}`);
     const k = `${o.site}|${o.order_id}`;
     const seen = new Set([k]);
