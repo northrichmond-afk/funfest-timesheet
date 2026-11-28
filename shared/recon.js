@@ -92,6 +92,8 @@ export const VOUCHER_PROVIDERS = [
   ['pluxee', /pluxee|sodexo/i, /pluxee|sodexo/i],
   ['care4', /care ?4/i, /care ?4/i],
   ['brighthorizons', /bright ?horizons/i, /bright ?horizons/i],
+  // Wider Plan runs both KiddiVouchers and the Childcare Grant Payment Service: its bank credits can be either
+  ['widerplan', /^wider ?plan$/i, /wider ?plan/i],
   ['kiddivouchers', /kiddi/i, /kiddi/i],
   ['grant', /grant/i, /grant|student finance|sfe/i],
   ['other', /./, /childcare vouchers|voucher/i],
@@ -281,7 +283,10 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
   const allSubs = pays.flatMap(p => (p.subsidies || []).map(s => ({ p, s }))).sort((a, b) => String(a.p.created_at).localeCompare(String(b.p.created_at)));
   const tfcPool = refs => credits.filter(c => c.kind === 'tfc' && refs.some(r => c.description.toUpperCase().includes(r)));
   const stemPool = stems => credits.filter(c => c.kind === 'tfc' && stems.some(st => new RegExp(`\\b${st}\\d{5}\\b`).test(c.description.toUpperCase())));
-  const voucherPool = key => credits.filter(c => c.kind === 'voucher' && [key, 'other'].includes(bankVoucherKey(c.description)));
+  const voucherPool = key => {
+    const keys = [key, 'other', ...(['kiddivouchers', 'grant'].includes(key) ? ['widerplan'] : [])];
+    return credits.filter(c => c.kind === 'voucher' && keys.includes(bankVoucherKey(c.description)));
+  };
   // Children we know by reference or name: a credit carrying one of their reference letters isn't
   // up for grabs by another family's booking just because the amount is the same
   const knownStems = new Set(payments.flatMap(p => [
@@ -402,7 +407,8 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
 
   // 3. orders
   const rows = [];
-  const inRange = orders.filter(o => toDay(o.created_at) >= from).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+  // an order from before the start date that an admin flagged 'unpaid' stays on the list
+  const inRange = orders.filter(o => toDay(o.created_at) >= from || ov.get(`${o.site}|${o.order_id}`)?.status === 'unpaid').sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
   const others = credits.filter(c => c.kind === 'other');
   for (const o of inRange) {
     const k = `${o.site}|${o.order_id}`;
