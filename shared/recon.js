@@ -223,6 +223,12 @@ export function linkInfo(o) {
   catch { return { credits: [], text: '' }; }
 }
 
+export const DISMISS_KEY = { site: '_bank', order_id: 0 };
+export function dismissedIds(overrides = []) {
+  const o = overrides.find(x => x.site === DISMISS_KEY.site && +x.order_id === DISMISS_KEY.order_id);
+  try { return JSON.parse(o?.note || '{}').dismissed || []; } catch { return []; }
+}
+
 export function reconcile({ orders = [], payments = [], payouts = [], bank = [], overrides = [] }, opts = {}) {
   const from = opts.from || '2026-01-01';
   const grace = opts.graceDays ?? 14;
@@ -447,8 +453,11 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
   }
 
   // PonchoPay / Tax-Free Childcare / voucher credits not tied to an order, and other money in
-  const unmatchedBank = credits.filter(c => c.left > 0.004 && c.date >= from && c.kind !== 'other');   // incl. MRYJ money not yet tied to a booking
-  const otherCredits = credits.filter(c => c.left > 0.004 && c.date >= from && c.kind === 'other');
+  // bank payments an admin removed from the "not matched" lists (override row site '_bank', note = JSON { dismissed: [ids] })
+  const dismissed = new Set(dismissedIds(overrides));
+  const unmatchedBank = credits.filter(c => c.left > 0.004 && c.date >= from && c.kind !== 'other' && !dismissed.has(c.id));   // incl. MRYJ money not yet tied to a booking
+  const otherCredits = credits.filter(c => c.left > 0.004 && c.date >= from && c.kind === 'other' && !dismissed.has(c.id));
+  const dismissedCredits = credits.filter(c => dismissed.has(c.id));
   const unmatchedPayments = [...payByOrder.values()].flat().filter(p => toDay(p.created_at) >= from);
   const sum = (list, f) => pounds(list.reduce((a, x) => a + f(x), 0));
   const due = rows.filter(r => !['refunded', 'notdue', 'staff'].includes(r.status));
@@ -462,5 +471,5 @@ export function reconcile({ orders = [], payments = [], payouts = [], bank = [],
     missingAmount: sum(due.filter(r => r.status === 'missing' || r.status === 'part'), r => r.due - r.received - r.transit),
     pending: due.filter(r => r.status === 'pending').length,
   };
-  return { rows, credits, payouts: po, unmatchedBank, otherCredits, unmatchedPayments, bankFrom, bankTo, totals };
+  return { rows, credits, payouts: po, unmatchedBank, otherCredits, dismissedCredits, unmatchedPayments, bankFrom, bankTo, totals };
 }
