@@ -247,6 +247,9 @@ function render(view, settings, data, res) {
   const c = conn();
   const counts = {}; for (const r of res.rows) counts[r.status] = (counts[r.status] || 0) + 1;
   const problems = r => ['missing', 'part'].includes(r.status);
+  // admin notes per order: kept in recon_overrides as site 'note:<club>' (separate from the paid / linked status)
+  const notes = new Map((data.overrides || []).filter(o => String(o.site).startsWith('note:')).map(o => [`${o.site.slice(5)}|${o.order_id}`, o]));
+  const noteOf = r => notes.get(`${r.order.site}|${r.order.order_id}`)?.note || '';
   const exp = loadExport();
   const expCheck = exp ? checkExport(exp, res) : [];
   const notInBankRefs = new Set(expCheck.filter(x => x.found && !x.inBank).map(x => x.reference));
@@ -255,7 +258,7 @@ function render(view, settings, data, res) {
   const q = filter.q.trim().toLowerCase();
   const rows = res.rows.filter(r => (!filter.site || r.order.site === filter.site)
     && (filter.status === 'all' ? true : filter.status === 'problems' ? problems(r) : filter.status === 'export' ? hl(r) : filter.status === 'paid' ? ['paid', 'staff'].includes(r.status) : r.status === filter.status)
-    && (!q || [r.order.number, r.order.parent, r.order.email, r.order.children, ...r.payments.map(p => p.reference)].join(' ').toLowerCase().includes(q)));
+    && (!q || [r.order.number, r.order.parent, r.order.email, r.order.children, noteOf(r), ...r.payments.map(p => p.reference)].join(' ').toLowerCase().includes(q)));
   const stale = d => !d || (Date.now() - new Date(d)) > 2 * 86400000;
   const orderLink = o => `${CLUBS[o.site]?.base || ''}/wp-admin/admin.php?page=wc-orders&action=edit&id=${o.order_id}`;
   const paidBy = r => [
@@ -317,7 +320,7 @@ function render(view, settings, data, res) {
         ${expOutside.length ? `<details><summary>Not in this list (${expOutside.length})</summary>${expOutside.map(x => `${esc(x.reference)} · ${esc(x.location)} · ${fmtD(x.created)} · ${gbp(x.amount)} · ${esc(x.method)} · ${esc(x.email)}`).join('<br>')}</details>` : ''}</div>` : ''}
       <div class="subtabs">${FILTERS.map(([k, l]) => `<button data-pf="${k}" class="${filter.status === k ? 'active' : ''}">${l}</button>`).join('')}</div>
       ${rows.length ? `<div class="table-wrap"><table>
-        <tr><th>Order</th><th>Date</th><th>Parent / child</th><th>Email</th><th>Due</th><th>Received</th><th>Paid by</th><th>Status</th><th></th></tr>
+        <tr><th>Order</th><th>Date</th><th>Parent / child</th><th>Email</th><th>Due</th><th>Received</th><th>Paid by</th><th>Status</th><th>Notes</th><th></th></tr>
         ${rows.slice(0, 500).map(r => `<tr${hl(r) ? ' class="hl-export" title="In the PonchoPay export, not found in the bank"' : ''}>
           <td><a href="${esc(orderLink(r.order))}" target="_blank" rel="noopener">#${esc(r.order.number)}</a><div class="small muted">${esc(SITES[r.order.site] || r.order.site)}</div></td>
           <td class="small" style="white-space:nowrap">${fmtD(r.order.created_at)}</td>
@@ -327,6 +330,8 @@ function render(view, settings, data, res) {
           <td>${gbp(r.received)}</td>
           <td class="small">${paidBy(r)}</td>
           <td>${statusPill(r)}</td>
+          <td><textarea class="pmNote" rows="2" data-note="${r.order.site}|${r.order.order_id}" placeholder="Add a note…">${esc(noteOf(r))}</textarea>
+            ${notes.get(`${r.order.site}|${r.order.order_id}`)?.set_at ? `<div class="small muted">${fmtD(notes.get(`${r.order.site}|${r.order.order_id}`).set_at)}</div>` : ''}</td>
           <td><div class="actions">${r.status === 'manual' ? `<button class="small" data-undo="${r.order.site}|${r.order.order_id}">Undo</button>`
             : ['missing', 'part', 'pending', 'transit'].includes(r.status) && !r.link ? `<button class="small" data-mark="${r.order.site}|${r.order.order_id}">Mark paid</button>` : ''}
             ${['staff', 'notdue'].includes(r.status) ? '' : `<button class="small" data-link="${r.order.site}|${r.order.order_id}" title="Choose the bank payments for this order">🔗 ${r.link ? 'Change link' : 'Link bank'}</button>`}</div></td>
@@ -412,12 +417,26 @@ function render(view, settings, data, res) {
   $('pmExpClear')?.addEventListener('click', () => { localStorage.removeItem(PP_EXPORT_KEY); if (filter.status === 'export') filter.status = 'problems'; render(view, settings, data, res); });
   let bankTimer;
   $('pmBankQ').oninput = () => { clearTimeout(bankTimer); bankTimer = setTimeout(() => { filter.bank = $('pmBankQ').value; $('pmBankRes').innerHTML = bankResults(filter.bank); }, 200); };
+  view.querySelectorAll('[data-note]').forEach(t => t.onchange = async () => {
+    const [site, id] = t.dataset.note.split('|');
+    const text = t.value.trim();
+    const { error } = text
+      ? await sb.from('recon_overrides').upsert({ site: 'note:' + site, order_id: +id, status: 'note', note: text, set_by: ctxRef.me?.id || null, set_at: new Date().toISOString() }, { onConflict: 'site,order_id' })
+      : await sb.from('recon_overrides').delete().eq('site', 'note:' + site).eq('order_id', +id);
+    if (error) return toast(error.message);
+    const k = `${site}|${id}`;
+    if (text) notes.set(k, { site: 'note:' + site, order_id: +id, note: text, set_at: new Date().toISOString() }); else notes.delete(k);
+    const o = data.overrides.find(x => x.site === 'note:' + site && +x.order_id === +id);
+    if (o) o.note = text; else if (text) data.overrides.push({ site: 'note:' + site, order_id: +id, status: 'note', note: text, set_at: new Date().toISOString() });
+    if (!text) data.overrides = data.overrides.filter(x => !(x.site === 'note:' + site && +x.order_id === +id));
+    toast(text ? 'Note saved' : 'Note removed');
+  });
   $('pmCsv').onclick = () => download(`funfest-payments-${new Date().toISOString().slice(0, 10)}.csv`, toCSV([
-    ['Club', 'Order', 'PonchoPay reference', 'Order date', 'WooCommerce status', 'Parent', 'Email', 'Children', 'Due', 'Received', 'In transit', 'Card fees', 'Status', 'Paid by', 'Note'],
+    ['Club', 'Order', 'PonchoPay reference', 'Order date', 'WooCommerce status', 'Parent', 'Email', 'Children', 'Due', 'Received', 'In transit', 'Card fees', 'Status', 'Paid by', 'Note', 'Admin notes'],
     ...rows.map(r => [SITES[r.order.site], r.order.number, r.payments.map(p => p.reference).join(', '), String(r.order.created_at).slice(0, 10), r.order.status, r.order.parent, r.order.email, r.order.children,
       r.due, r.received, r.transit, r.fees, STATUS[r.status].label,
       [...r.subs.map(s => `${SCHEME[s.scheme] || s.scheme} ${s.net} ${s.state}${s.payout ? ' ' + s.payout.reference : ''}${s.credits?.[0] ? ' bank ' + s.credits[0].credit.date : ''}`), ...r.direct.map(u => `bank transfer ${u.amount} ${u.credit.date}`)].join('; '),
-      (r.link ? r.link.text : r.override?.note) || '']),
+      (r.link ? r.link.text : r.override?.note) || '', noteOf(r)]),
   ]));
   $('pmWp')?.addEventListener('click', async () => {
     const { error } = await sb.rpc('recon_set_wp_login', { p_user: c.user, p_pass: c.pass });

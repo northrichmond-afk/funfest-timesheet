@@ -28,3 +28,4 @@ button.stat.active { border-color: var(--pink); box-shadow: 0 0 0 2px var(--pink
 .daynav button { padding: .35rem .7rem; font-size: 1.1rem; line-height: 1; }
 tr.hl-export td { background: #fef3c7; }
 tr.hl-export td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
+.pmNote { width: 100%; min-width: 160px; font-size: .85rem; resize: vertical; }
