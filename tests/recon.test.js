@@ -316,3 +316,14 @@ test('reconcile: an older order flagged unpaid stays on the list as missing', ()
   const b = reconcile({ orders: [o], overrides: [{ site: 'northrichmond', order_id: 1323, status: 'unpaid', note: '2025' }] }, { from: '2026-01-01', today: '2026-11-28' });
   assert.equal(b.rows[0].status, 'missing');
 });
+
+test('reconcile: bank payments removed from the not-matched list', () => {
+  const bank = parseHsbcCsv(`Date,Type,Description,Paid Out,Paid In,Balance
+25 Sep 2026,CR,BRIGHTHORIZONS,,2120.00,`, 's');
+  const id = bank[0].id;
+  const a = reconcile({ bank }, { today: '2026-11-28' });
+  assert.equal(a.unmatchedBank.length, 1);
+  const b = reconcile({ bank, overrides: [{ site: '_bank', order_id: 0, status: 'dismissed', note: JSON.stringify({ dismissed: [id] }) }] }, { today: '2026-11-28' });
+  assert.equal(b.unmatchedBank.length, 0);
+  assert.equal(b.dismissedCredits.length, 1);
+});
