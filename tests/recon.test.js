@@ -296,3 +296,14 @@ test('reconcile: first names only on PonchoPay, surname from the order', () => {
   const r = reconcile({ orders: [o], payments: [pay], bank }, { today: '2026-11-26' });
   assert.equal(r.rows[0].status, 'paid');
 });
+
+test('reconcile: bank payments removed from the not-matched list', () => {
+  const bank = parseHsbcCsv(`Date,Type,Description,Paid Out,Paid In,Balance
+25 Sep 2026,CR,BRIGHTHORIZONS,,2120.00,`, 's');
+  const id = bank[0].id;
+  const a = reconcile({ bank }, { today: '2026-11-28' });
+  assert.equal(a.unmatchedBank.length, 1);
+  const b = reconcile({ bank, overrides: [{ site: '_bank', order_id: 0, status: 'dismissed', note: JSON.stringify({ dismissed: [id] }) }] }, { today: '2026-11-28' });
+  assert.equal(b.unmatchedBank.length, 0);
+  assert.equal(b.dismissedCredits.length, 1);
+});

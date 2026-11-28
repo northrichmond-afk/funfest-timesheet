@@ -7,7 +7,7 @@
 import { sb } from '../shared/supabase.js';
 import { esc, toast, download } from '../shared/ui.js';
 import { toCSV } from '../shared/hours.js';
-import { SITES, STATUS, csvRow, reconcile, parseHsbcCsv, mergeBank, compactPonchoPayment, compactPonchoPayout } from '../shared/recon.js';
+import { SITES, STATUS, csvRow, DISMISS_KEY, dismissedIds, reconcile, parseHsbcCsv, mergeBank, compactPonchoPayment, compactPonchoPayout } from '../shared/recon.js';
 import { conn, CLUBS } from './invoice.js';
 
 const ADMIN_ORIGIN = location.origin;
@@ -335,12 +335,16 @@ function render(view, settings, data, res) {
       <p class="small muted">Text matches anywhere in the description. <b>*</b> = any characters, <b>?</b> = one character. A number also matches the amount.</p>
     </div>
 
-    ${res.unmatchedBank.length || res.unmatchedPayments.length ? `<div class="card">
+    ${res.unmatchedBank.length || res.unmatchedPayments.length || res.dismissedCredits.length ? `<div class="card">
       <h2>Not matched to a booking</h2>
       ${res.unmatchedBank.length ? `<h3>Bank credits (${res.unmatchedBank.length})</h3><div class="table-wrap"><table>
-        <tr><th>Date</th><th>From</th><th>Amount</th><th>Not yet allocated</th></tr>
-        ${res.unmatchedBank.map(cr => `<tr><td class="small">${fmtD(cr.date)}</td><td class="small">${esc(cr.description)}</td><td>${gbp(cr.amount)}</td><td>${gbp(cr.left)}</td></tr>`).join('')}
+        <tr><th>Date</th><th>From</th><th>Amount</th><th>Not yet allocated</th><th></th></tr>
+        ${res.unmatchedBank.map(cr => `<tr><td class="small">${fmtD(cr.date)}</td><td class="small">${esc(cr.description)}</td><td>${gbp(cr.amount)}</td><td>${gbp(cr.left)}</td>
+          <td><button class="small" data-dismiss="${esc(cr.id)}" title="Take this off the list (it stays in the bank data)">Remove</button></td></tr>`).join('')}
       </table></div>` : ''}
+      ${res.dismissedCredits.length ? `<details><summary class="small">Removed from this list (${res.dismissedCredits.length})</summary>
+        <div class="table-wrap"><table>${res.dismissedCredits.map(cr => `<tr><td class="small">${fmtD(cr.date)}</td><td class="small">${esc(cr.description)}</td><td>${gbp(cr.amount)}</td>
+          <td><button class="small" data-restore="${esc(cr.id)}">Put back</button></td></tr>`).join('')}</table></div></details>` : ''}
       ${res.unmatchedPayments.length ? `<h3>PonchoPay payments with no order here (${res.unmatchedPayments.length})</h3>
         <p class="small muted">Their WooCommerce order isn’t in the list: refresh orders, or the order is before ${fmtD(settings.start_date)}.</p>
         <div class="table-wrap"><table><tr><th>Reference</th><th>Club / order</th><th>Date</th><th>Parent</th><th>Amount</th></tr>
@@ -436,6 +440,14 @@ function render(view, settings, data, res) {
   view.querySelectorAll('[data-mark]').forEach(b => b.onclick = () => mark(b.dataset.mark, false));
   view.querySelectorAll('[data-undo]').forEach(b => b.onclick = () => mark(b.dataset.undo, true));
   view.querySelectorAll('[data-link]').forEach(b => b.onclick = () => linkDialog(b.dataset.link));
+  const setDismissed = async (id, on) => {
+    const ids = new Set(dismissedIds(data.overrides));
+    if (on) ids.add(id); else ids.delete(id);
+    const { error } = await sb.from('recon_overrides').upsert({ ...DISMISS_KEY, status: 'dismissed', note: JSON.stringify({ dismissed: [...ids] }), set_by: ctxRef.me?.id || null, set_at: new Date().toISOString() }, { onConflict: 'site,order_id' });
+    if (error) toast(error.message); else again();
+  };
+  view.querySelectorAll('[data-dismiss]').forEach(b => b.onclick = () => setDismissed(b.dataset.dismiss, true));
+  view.querySelectorAll('[data-restore]').forEach(b => b.onclick = () => setDismissed(b.dataset.restore, false));
 
   // Link bank payments to an order by hand (replaces the automatic matching for that order)
   function linkDialog(key) {
