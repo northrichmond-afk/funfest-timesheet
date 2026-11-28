@@ -108,13 +108,16 @@ async function upsertAll(table, rows, onConflict) {
 }
 // PostgREST returns at most 1000 rows a time
 async function selectAll(table, cols, apply = q => q) {
-  const out = [];
-  for (let from = 0; ; from += 1000) {
-    const { data, error } = await apply(sb.from(table).select(cols)).range(from, from + 999);
-    if (error) throw new Error(`${table}: ${error.message}`);
-    out.push(...data);
-    if (data.length < 1000) return out;
-  }
+  // first page with the row count, then the rest of the pages at the same time (not one after another)
+  const first = await apply(sb.from(table).select(cols, { count: 'exact' })).range(0, 999);
+  if (first.error) throw new Error(`${table}: ${first.error.message}`);
+  const total = first.count ?? first.data.length;
+  if (total <= 1000) return first.data;
+  const rest = await Promise.all(Array.from({ length: Math.ceil(total / 1000) - 1 }, (_, i) =>
+    apply(sb.from(table).select(cols)).range((i + 1) * 1000, (i + 2) * 1000 - 1)));
+  const err = rest.find(r => r.error);
+  if (err) throw new Error(`${table}: ${err.error.message}`);
+  return [first.data, ...rest.map(r => r.data)].flat();
 }
 
 // ── Sources ───────────────────────────────────────────────────
@@ -208,11 +211,11 @@ export async function tabPayments(ctx) {
   let data;
   try {
     const [orders, payments, payouts, bank, overrides, wpSaved] = await Promise.all([
-      selectAll('recon_orders', '*', q => q.gte('created_at', from).order('created_at')),
-      selectAll('pp_payments', 'uuid,reference,site,order_id,email,children,amount,created_at,completed_at,subsidies', q => q.gte('created_at', addDays(from, -60)).order('created_at')),
-      selectAll('pp_payouts', 'id,reference,amount,booked_at,payment_ids', q => q.gte('booked_at', addDays(from, -10)).order('booked_at')),
-      selectAll('bank_tx', 'id,date,type,description,amount,source', q => q.gte('date', addDays(from, -10)).order('date')),
-      selectAll('recon_overrides', '*'),
+      selectAll('recon_orders', 'site,order_id,number,status,created_at,total,refunded,parent,email,children,payment_title,payment_method,booking_id,previous_booking', q => q.gte('created_at', from).order('created_at').order('site').order('order_id')),
+      selectAll('pp_payments', 'uuid,reference,site,order_id,email,children,amount,created_at,completed_at,subsidies', q => q.gte('created_at', addDays(from, -60)).order('created_at').order('uuid')),
+      selectAll('pp_payouts', 'id,reference,amount,booked_at,payment_ids', q => q.gte('booked_at', addDays(from, -10)).order('booked_at').order('id')),
+      selectAll('bank_tx', 'id,date,type,description,amount,source', q => q.gte('date', addDays(from, -10)).order('date').order('id')),
+      selectAll('recon_overrides', '*', q => q.order('site').order('order_id')),
       sb.rpc('recon_wp_login_saved').then(r => r.data),
     ]);
     // older orders an admin flagged 'unpaid' (before the start date) stay on the list
