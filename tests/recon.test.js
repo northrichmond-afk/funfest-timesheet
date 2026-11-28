@@ -297,6 +297,26 @@ test('reconcile: first names only on PonchoPay, surname from the order', () => {
   assert.equal(r.rows[0].status, 'paid');
 });
 
+test('reconcile: KiddiVouchers paid as WIDER PLAN LTD', () => {
+  const bank = parseHsbcCsv(`Date,Type,Description,Paid Out,Paid In,Balance
+30 Jan 2025,CR,WIDER PLAN LTD,,114.00,`, 's');
+  assert.equal(bankKind(bank[0]), 'voucher');
+  const pay = compactPonchoPayment({ uuid: 'k', reference: 'PP-k', amount: 11400, createdDate: '2025-01-26T10:00:00Z', completedDate: '2025-01-26T10:00:00Z', children: [{ name: 'Henry Nichol' }],
+    integration: { metadata: '902', location: 'https://fun-fest.co.uk/northrichmond' },
+    subsidies: [{ scheme: 'childcare-voucher', amount: 11400, refunds: [], payments: [], voucherProvider: { name: 'KiddiVouchers' } }] });
+  const o = { site: 'northrichmond', order_id: 902, number: '902', status: 'completed', created_at: '2025-01-26T09:00:00Z', total: 114, refunded: 0 };
+  const r = reconcile({ orders: [o], payments: [pay], bank }, { from: '2025-01-01', today: '2026-11-28' });
+  assert.equal(r.rows[0].status, 'paid');
+});
+
+test('reconcile: an older order flagged unpaid stays on the list as missing', () => {
+  const o = { site: 'northrichmond', order_id: 1323, number: '1323', status: 'completed', created_at: '2025-07-24T09:00:00Z', total: 38, refunded: 0 };
+  const a = reconcile({ orders: [o] }, { from: '2026-01-01', today: '2026-11-28' });
+  assert.equal(a.rows.length, 0);
+  const b = reconcile({ orders: [o], overrides: [{ site: 'northrichmond', order_id: 1323, status: 'unpaid', note: '2025' }] }, { from: '2026-01-01', today: '2026-11-28' });
+  assert.equal(b.rows[0].status, 'missing');
+});
+
 test('reconcile: bank payments removed from the not-matched list', () => {
   const bank = parseHsbcCsv(`Date,Type,Description,Paid Out,Paid In,Balance
 25 Sep 2026,CR,BRIGHTHORIZONS,,2120.00,`, 's');

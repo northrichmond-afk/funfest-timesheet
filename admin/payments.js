@@ -215,6 +215,17 @@ export async function tabPayments(ctx) {
       selectAll('recon_overrides', '*'),
       sb.rpc('recon_wp_login_saved').then(r => r.data),
     ]);
+    // older orders an admin flagged 'unpaid' (before the start date) stay on the list
+    const flagged = overrides.filter(o => o.status === 'unpaid');
+    for (const site of new Set(flagged.map(o => o.site))) {
+      const ids = flagged.filter(o => o.site === site).map(o => +o.order_id);
+      const [{ data: old }, { data: oldPays }] = await Promise.all([
+        sb.from('recon_orders').select('*').eq('site', site).in('order_id', ids),
+        sb.from('pp_payments').select('uuid,reference,site,order_id,email,children,amount,created_at,completed_at,subsidies').eq('site', site).in('order_id', ids),
+      ]);
+      for (const o of old || []) if (!orders.some(x => x.site === o.site && +x.order_id === +o.order_id)) orders.push(o);
+      for (const p of oldPays || []) if (!payments.some(x => x.uuid === p.uuid)) payments.push(p);
+    }
     data = { orders: orders.map(o => ({ ...o, total: +o.total, refunded: +o.refunded })), payments: payments.map(p => ({ ...p, amount: +p.amount })),
       payouts: payouts.map(p => ({ ...p, amount: +p.amount })), bank: bank.map(t => ({ ...t, amount: +t.amount })), overrides, wpSaved };
   } catch (e) { view.innerHTML = `<div class="card msg bad">${esc(e.message)}</div>`; return; }
